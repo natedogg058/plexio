@@ -18,3 +18,16 @@ export const isServerAliveRemote = async (serverUrl: string, token: string) => {
     return false;
   }
 };
+
+export const getPublicConfig = async (): Promise<{ baseUrl: string }> => {
+  try {
+    const response = await axios.get(
+      `${window.location.origin}/api/v1/public-config`,
+      { timeout: 5000 },
+    );
+    return { baseUrl: response.data?.base_url || '' };
+  } catch (error) {
+    console.error('Error fetching public config:', error);
+    return { baseUrl: '' };
+  }
+};

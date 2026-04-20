@@ -1,4 +1,4 @@
-import { FC } from 'react';
+import { FC, useEffect, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { encode as base64_encode } from 'js-base64';
 import { useForm } from 'react-hook-form';
@@ -20,12 +20,21 @@ import { Icons } from '@/components/icons';
 import { Button } from '@/components/ui/button.tsx';
 import { Form } from '@/components/ui/form';
 import usePMSSections from '@/hooks/usePMSSections.tsx';
+import { getPublicConfig } from '@/services/BackendService.tsx';
 
 interface Props {
   servers: PlexServer[];
 }
 
 const ConfigurationForm: FC<Props> = ({ servers }) => {
+  const [baseUrl, setBaseUrl] = useState<string>('');
+
+  useEffect(() => {
+    // Fetch once at mount. If the backend doesn't respond or BASE_URL isn't set,
+    // baseUrl stays empty and we fall back to window.location.origin below.
+    getPublicConfig().then(({ baseUrl }) => setBaseUrl(baseUrl));
+  }, []);
+
   const form = useForm<ConfigurationFormType>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -50,7 +59,11 @@ const ConfigurationForm: FC<Props> = ({ servers }) => {
     );
 
     const encodedConfiguration = base64_encode(JSON.stringify(configuration));
-    const addonUrl = `${window.location.origin}/${uuidv4()}/${encodedConfiguration}/manifest.json`;
+    // Prefer operator-configured BASE_URL when set (for reverse-proxy deployments
+    // where window.location.origin may not match the public-facing URL).
+    // Falls back to window.location.origin for default localhost deployments.
+    const origin = baseUrl || window.location.origin;
+    const addonUrl = `${origin}/${uuidv4()}/${encodedConfiguration}/manifest.json`;
 
     if (event.nativeEvent.submitter.name === 'clipboard') {
       navigator.clipboard.writeText(addonUrl);
