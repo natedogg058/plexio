@@ -218,7 +218,7 @@ class PlexMediaMeta(BaseModel):
                         },
                     ),
                     subtitles=external_subtitles,
-                    behaviorHints={'bingeGroup': quality_description},
+                    behaviorHints={'bingeGroup': quality_description, 'filename': filename},
                 ),
             )
 
@@ -250,7 +250,7 @@ class PlexMediaMeta(BaseModel):
                         ),
                         url=str(transcode_url % {'videoQuality': 100}),
                         subtitles=external_subtitles,
-                        behaviorHints={'bingeGroup': quality_description},
+                        behaviorHints={'bingeGroup': quality_description, 'filename': filename},
                     ),
                 )
 
@@ -270,7 +270,7 @@ class PlexMediaMeta(BaseModel):
                             ),
                             url=str(transcode_url % quality_params['plex_args']),
                             subtitles=external_subtitles,
-                            behaviorHints={'bingeGroup': quality_description},
+                            behaviorHints={'bingeGroup': quality_description, 'filename': filename},
                         ),
                     )
 
