@@ -3,10 +3,20 @@ name: Publish Docker image
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag to build (e.g. 0.2.0)'
+        required: true
+        default: '0.2.0'
+
+permissions:
+  contents: read
+  packages: write
 
 jobs:
   push_to_registry:
-    name: Push Docker image to Docker Hub
+    name: Push Docker image to GHCR
     runs-on: ubuntu-latest
     steps:
       - name: Check out the repo
@@ -25,8 +35,8 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
-            type=semver,pattern={{version}},value=${{ inputs.version }}
-            type=raw,value=latest,enable=${{github.event.release.prerelease == 'false'}}
+            type=semver,pattern={{version}},value=${{ github.event.release.tag_name || inputs.version }}
+            type=raw,value=latest,enable=${{ github.event.release.prerelease != true }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5.3.0
