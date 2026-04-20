@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     cache_type: CacheType = CacheType.memory
     redis_url: str = 'redis://redis:6399/0'
     plex_matching_token: str | None = None
+    base_url: str | None = None  # Public-facing URL when behind reverse proxy / tunnel (e.g. https://plexio.example.com). Used to generate install URLs from the configure page. Falls back to window.location.origin if unset.
 
 
 settings = Settings()
