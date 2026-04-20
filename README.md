@@ -1,3 +1,29 @@
+# Plexio (natedogg058 fork)
+
+> **This is a maintained fork of [vanchaxy/plexio](https://github.com/vanchaxy/plexio).**
+> Upstream is dormant (last release May 2025). This fork adds fixes and improvements for self-hosted deployments.
+
+## What's different from upstream
+
+- **`behaviorHints.filename` on stream objects** — populates the Stremio-standard field used by clients for release fingerprinting (IntroDB skip intro, Trakt scrobbling, OpenSubtitles hash lookup). Closes a gap vs AIOStreams and other Stremio-standard addons. ([upstream PR #69](https://github.com/vanchaxy/plexio/pull/69))
+- **Wider default CORS regex** — covers localhost on any port, private LAN ranges (`192.168.x.x`, `10.x.x.x`, `172.16-31.x.x`), Tailscale tailnet domains (`*.ts.net`), and `app.strem.io`. Reduces friction for self-hosted deployments behind reverse proxies or on Tailscale. `CORS_ORIGIN_REGEX` env var override is preserved.
+
+## Installation
+
+Same as upstream — `docker run -d -p 7777:80 ghcr.io/natedogg058/plexio:latest` (once GHCR publish is enabled) or build from source with `docker build -t plexio-fork .`.
+
+## Roadmap
+
+See [ISSUES](https://github.com/natedogg058/plexio/issues) for open work. Planned fork-specific additions:
+- `BASE_URL` env var for reverse proxy / Tailscale Funnel deployments
+- Documentation expansion for self-hosting behind reverse proxies
+- Investigation of upstream toggle-default behaviour
+
+---
+
+*Original upstream README below.*
+
+---
 # Plexio: Plex Interaction for Stremio
 
 ⚠️ Plexio is an independent project and is not in any way affiliated with Plex or Stremio. ⚠️

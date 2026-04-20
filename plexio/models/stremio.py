@@ -55,6 +55,8 @@ class StremioStreamBehaviorHints(StremioBase):
     not_web_ready: bool = False
     binge_group: str | None = None
     proxy_headers: dict | None = None
+    filename: str | None = None  # For client-side release fingerprinting (IntroDB, etc.)
+    video_size: int | None = None  # Stremio-standard byte size of the underlying file
 
 
 class StremioStream(StremioBase):
