@@ -1,34 +1,30 @@
 import axios from 'axios';
-
 const PLEX_PRODUCT_NAME = 'Plexio';
 const PLEX_API_URL = 'https://plex.tv/api/v2';
-
 export const createAuthPin = async (
   clientIdentifier: string,
 ): Promise<AuthPin> => {
   try {
-    const response = await axios.postForm(`${PLEX_API_URL}/pins`, {
-      strong: 'true',
-      'X-Plex-Product': PLEX_PRODUCT_NAME,
-      'X-Plex-Client-Identifier': clientIdentifier,
+    const response = await axios.post('/api/v1/plex-pin', null, {
+      headers: {
+        'X-Plex-Client-Identifier': clientIdentifier,
+      },
     });
-
     return response.data;
   } catch (error) {
-    console.error('Error fetching users:', error);
+    console.error('Error fetching pin:', error);
     throw error;
   }
 };
-
 export const getAuthToken = async (
   authPin: AuthPin,
   clientIdentifier: string,
 ): Promise<string> => {
   try {
-    const response = await axios.get(`${PLEX_API_URL}/pins/${authPin.id}`, {
+    const response = await axios.get(`/api/v1/plex-token/${authPin.id}`, {
       params: {
         code: authPin.code,
-        'X-Plex-Client-Identifier': clientIdentifier,
+        client_identifier: clientIdentifier,
       },
     });
     return response.data.authToken;
@@ -37,7 +33,6 @@ export const getAuthToken = async (
     throw error;
   }
 };
-
 export const getPlexUser = async (
   token: string,
   clientIdentifier: string,
@@ -50,24 +45,21 @@ export const getPlexUser = async (
         'X-Plex-Token': token,
       },
     });
-
     if (response.status !== 200) {
       return null;
     }
-
     return response.data;
   } catch (error) {
     console.error('Error fetching user:', error);
     return null;
   }
 };
-
 export const getPlexServers = async (
   token: string,
   clientIdentifier: string,
 ): Promise<PlexServer[]> => {
   try {
-    const response = await axios.get(`${PLEX_API_URL}/resources`, {
+    const response = await axios.get('/api/v1/plex-resources', {
       params: {
         includeHttps: 1,
         includeRelay: 1,
@@ -75,11 +67,9 @@ export const getPlexServers = async (
         'X-Plex-Client-Identifier': clientIdentifier,
       },
     });
-
     if (!response.data || !Array.isArray(response.data)) {
       throw new Error('Invalid response from server');
     }
-
     return response.data.filter(
       (server: any) =>
         server.provides.includes('server') && 'accessToken' in server,
