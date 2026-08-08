@@ -2,6 +2,8 @@ export { ServerNameField } from './serverName.tsx';
 export { DiscoveryUrlField } from './discoveryUrl.tsx';
 export { StreamingUrlField } from './streamingUrl.tsx';
 export { SectionsField } from './sections.tsx';
+export { IncludeDirectPlayField } from './includeDirectPlay.tsx';
+export { IncludeConnectionFallbacksField } from './includeConnectionFallbacks.tsx';
 export { IncludeTranscodeOriginalField } from './includeTranscodeOriginal.tsx';
 export { IncludeTranscodeDownFields } from './includeTranscodeDown.tsx';
 export { IncludePlexTvField } from './includePlexTv.tsx';

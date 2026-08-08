@@ -6,6 +6,8 @@ import { v4 as uuidv4 } from 'uuid';
 import {
   DiscoveryUrlField,
   IncludeTranscodeOriginalField,
+  IncludeDirectPlayField,
+  IncludeConnectionFallbacksField,
   SectionsField,
   ServerNameField,
   StreamingUrlField,
@@ -50,6 +52,8 @@ const ConfigurationForm: FC<Props> = ({
   const form = useForm<ConfigurationFormType>({
     resolver: zodResolver(formSchema),
     defaultValues: {
+      includeDirectPlay: true,
+      includeConnectionFallbacks: false,
       includeTranscodeOriginal: false,
       includeTranscodeDown: false,
       includePlexTv: false,
@@ -78,11 +82,33 @@ const ConfigurationForm: FC<Props> = ({
     const submitter =
       nativeEvent instanceof SubmitEvent ? nativeEvent.submitter : null;
     const action = submitter instanceof HTMLButtonElement ? submitter.name : '';
+    const includeConnectionFallbacks =
+      configuration.includeDirectPlay &&
+      configuration.includeConnectionFallbacks;
 
     const normalizedConfiguration = {
       ...configuration,
+      includeConnectionFallbacks,
       version: __APP_VERSION__,
       accessToken: server.accessToken,
+      streamingConnectionKind: (() => {
+        const selected = server.connections.find(
+          (connection) => connection.uri === configuration.streamingUrl,
+        );
+        return selected?.relay ? 'relay' : selected?.local ? 'local' : 'remote';
+      })(),
+      streamingConnections: includeConnectionFallbacks
+        ? server.connections
+            .filter((connection) => connection.uri !== configuration.streamingUrl)
+            .map((connection) => ({
+              url: connection.uri,
+              kind: connection.relay
+                ? 'relay'
+                : connection.local
+                  ? 'local'
+                  : 'remote',
+            }))
+        : [],
       sections: configuration.sections.filter((item) =>
         sections.some((section) => section.key === item.key),
       ),
@@ -150,6 +176,10 @@ const ConfigurationForm: FC<Props> = ({
         )}
         {discoveryUrl && (
           <SectionsField form={form} sections={sections}></SectionsField>
+        )}
+        <IncludeDirectPlayField form={form} />
+        {form.watch('includeDirectPlay') && (
+          <IncludeConnectionFallbacksField form={form} />
         )}
         <IncludeTranscodeOriginalField form={form} />
         <IncludeTranscodeDownFields form={form} />

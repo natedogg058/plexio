@@ -64,6 +64,16 @@ class FakeClient:
         return self.stream_response
 
 
+class FallbackClient:
+    def __init__(self, responses):
+        self.responses = list(responses)
+        self.calls = []
+
+    def head(self, url, **kwargs):
+        self.calls.append(('HEAD', url, kwargs))
+        return self.responses.pop(0)
+
+
 class PlaybackPositionTests(TestCase):
     def test_position_uses_range_offset_and_elapsed_time(self):
         self.assertEqual(
@@ -91,6 +101,46 @@ class PlaybackPositionTests(TestCase):
 
 
 class PlaybackProxyTests(IsolatedAsyncioTestCase):
+    async def test_head_probe_retries_gateway_error_on_alternate_connection(self):
+        failed = FakeResponse(status=503)
+        succeeded = FakeResponse(
+            status=206,
+            headers={
+                'Content-Length': '1000',
+                'Content-Range': 'bytes 0-999/1000',
+                'Content-Type': 'video/x-matroska',
+            },
+        )
+        client = FallbackClient([failed, succeeded])
+        request = SimpleNamespace(method='HEAD', headers={})
+        configuration = SimpleNamespace(
+            streaming_url=URL('https://primary.example.test'),
+            direct_play_connections=[
+                (URL('https://primary.example.test'), None),
+                (URL('https://relay.example.test'), None),
+            ],
+            discovery_url=URL('https://primary.example.test'),
+            access_token='secret',
+        )
+
+        response = await proxy_playback(
+            request,
+            client=client,
+            configuration=configuration,
+            rating_key='42',
+            duration_ms=60_000,
+            part_key='/library/parts/1/file.mkv',
+            identifier='session-id',
+        )
+
+        self.assertEqual(response.status_code, 206)
+        self.assertTrue(failed.read_called)
+        self.assertTrue(failed.closed)
+        self.assertEqual(
+            [call[1].host for call in client.calls],
+            ['primary.example.test', 'relay.example.test'],
+        )
+
     async def test_timeline_sends_query_and_releases_response(self):
         client = FakeClient(FakeResponse())
 

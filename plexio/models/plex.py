@@ -49,6 +49,17 @@ RESOLUTION_QUALITY_PARAMS = {
 }
 
 
+def _external_subtitles(subtitle_streams, base_url, access_token):
+    return [
+        {
+            'id': str(stream['id']),
+            'lang': stream['displayTitle'],
+            'url': str(base_url / stream['key'][1:] % {'X-Plex-Token': access_token}),
+        }
+        for stream in subtitle_streams
+    ]
+
+
 class PlexMediaType(str, Enum):
     show = 'show'
     movie = 'movie'
@@ -193,7 +204,7 @@ class PlexMediaMeta(BaseModel):
 
             audio_languages = set()
             subtitles_languages = set()
-            external_subtitles = []
+            subtitle_streams = []
             for part_stream in media['Part'][0].get('Stream', []):
                 if part_stream['streamType'] == 2:
                     audio_languages.add(
@@ -204,62 +215,81 @@ class PlexMediaMeta(BaseModel):
                         get_flag_emoji(part_stream.get('languageTag', 'Unknown')),
                     )
                     if 'key' in part_stream:
-                        external_subtitles.append(
-                            {
-                                'id': str(part_stream['id']),
-                                'lang': part_stream['displayTitle'],
-                                'url': str(
-                                    configuration.streaming_url
-                                    / part_stream['key'][1:]
-                                    % {
-                                        'X-Plex-Token': configuration.access_token,
-                                    }
-                                ),
-                            }
-                        )
+                        subtitle_streams.append(part_stream)
 
             description_template = '{filename}\n{quality}\n{languages}'
             languages = '/'.join(sorted(audio_languages))
             if subtitles_languages:
                 languages += f' ({"/".join(sorted(subtitles_languages))})'
 
-            quality_description = f'Direct Play {media.get("videoResolution", "")}'
-            if play_prefix:
-                rk = self.key.rsplit('/', 1)[-1]
-                pk = (
-                    base64.urlsafe_b64encode(media['Part'][0]['key'].encode())
-                    .rstrip(b'=')
-                    .decode()
+            if getattr(configuration, 'include_direct_play', True):
+                connections = getattr(
+                    configuration,
+                    'direct_play_connections',
+                    [(configuration.streaming_url, None)],
                 )
-                direct_play_url = (
-                    f'{play_prefix}/{rk}/'
-                    f'{self.duration or media.get("duration") or 0}/{pk}'
-                )
-            else:
-                direct_play_url = str(
-                    configuration.streaming_url
-                    / media['Part'][0]['key'][1:]
-                    % {
-                        'X-Plex-Token': configuration.access_token,
-                    },
-                )
-            streams.append(
-                StremioStream(
-                    name=name,
-                    description=description_template.format(
-                        filename=filename,
-                        quality=quality_description,
-                        languages=languages,
-                    ),
-                    url=direct_play_url,
-                    subtitles=external_subtitles,
-                    behaviorHints={
-                        'bingeGroup': quality_description,
-                        'filename': filename,
-                        'videoSize': video_size,
-                    },
-                ),
-            )
+                for connection_index, (stream_base, connection_kind) in enumerate(
+                    connections
+                ):
+                    kind_label = getattr(
+                        connection_kind,
+                        'value',
+                        'remote',
+                    ).capitalize()
+                    if play_prefix:
+                        if connection_index > 0:
+                            break
+                        rk = self.key.rsplit('/', 1)[-1]
+                        pk = (
+                            base64.urlsafe_b64encode(media['Part'][0]['key'].encode())
+                            .rstrip(b'=')
+                            .decode()
+                        )
+                        direct_play_url = (
+                            f'{play_prefix}/{rk}/'
+                            f'{self.duration or media.get("duration") or 0}/{pk}'
+                        )
+                        connection_label = (
+                            'Automatic connection fallback'
+                            if len(connections) > 1
+                            else kind_label
+                        )
+                    else:
+                        direct_play_url = str(
+                            stream_base
+                            / media['Part'][0]['key'][1:]
+                            % {'X-Plex-Token': configuration.access_token},
+                        )
+                        connection_label = (
+                            f'Primary {kind_label}'
+                            if connection_index == 0
+                            else f'Alternate {kind_label}'
+                        )
+                    quality_description = (
+                        f'Direct Play {media.get("videoResolution", "")} '
+                        f'· {connection_label}'
+                    )
+                    streams.append(
+                        StremioStream(
+                            name=name,
+                            description=description_template.format(
+                                filename=filename,
+                                quality=quality_description,
+                                languages=languages,
+                            ),
+                            url=direct_play_url,
+                            subtitles=_external_subtitles(
+                                subtitle_streams,
+                                stream_base,
+                                configuration.access_token,
+                            ),
+                            behaviorHints={
+                                'bingeGroup': quality_description,
+                                'filename': filename,
+                                'videoSize': video_size,
+                            },
+                        ),
+                    )
 
             transcode_url = (
                 configuration.streaming_url
@@ -288,7 +318,11 @@ class PlexMediaMeta(BaseModel):
                             languages=languages,
                         ),
                         url=str(transcode_url % {'videoQuality': 100}),
-                        subtitles=external_subtitles,
+                        subtitles=_external_subtitles(
+                            subtitle_streams,
+                            configuration.streaming_url,
+                            configuration.access_token,
+                        ),
                         behaviorHints={
                             'bingeGroup': quality_description,
                             'filename': filename,
@@ -312,7 +346,11 @@ class PlexMediaMeta(BaseModel):
                                 languages=languages,
                             ),
                             url=str(transcode_url % quality_params['plex_args']),
-                            subtitles=external_subtitles,
+                            subtitles=_external_subtitles(
+                                subtitle_streams,
+                                configuration.streaming_url,
+                                configuration.access_token,
+                            ),
                             behaviorHints={
                                 'bingeGroup': quality_description,
                                 'filename': filename,

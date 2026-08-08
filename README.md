@@ -8,8 +8,9 @@ Plexio is independent and is not affiliated with Plex or Stremio.
 
 ## Highlights
 
-- Direct Play and optional Plex transcoding streams.
+- Configurable Direct Play and optional Plex transcoding streams.
 - Local, remote, shared-server, and Plex Relay connections.
+- Clearly labelled alternate-connection streams, with automatic proxy fallback.
 - Continue Watching, Recently Added, searchable library, and sort catalogs.
 - IMDb IDs when available, with Plex-native IDs for personal or unmatched media.
 - Stremio stream metadata including filename and file size.
@@ -81,6 +82,18 @@ If you enable “Report playback to Plex”, Direct Play streams pass through
 Plexio. The public URL must then be reachable by every Stremio device and your
 proxy must permit byte-range requests and long-running responses.
 
+## Playback controls
+
+Direct Play is enabled by default. You can turn it off when a shared server
+rejects original-file playback and offer only Plex transcodes instead. Enable
+“Include alternate Plex connections” to expose the selected server's other
+local, remote, and Relay URLs as labelled Direct Play choices.
+
+When playback reporting is also enabled, Plexio presents one Direct Play choice
+and automatically retries those authorized connections after connection errors
+or HTTP 502/503/504 responses. It does not bypass Plex account or remote-play
+permissions.
+
 ## Shared servers and Plex Pass
 
 For media matching on a server shared with you, set `PLEX_MATCHING_TOKEN` to an
@@ -118,7 +131,6 @@ Use [GitHub Issues](https://github.com/natedogg058/plexio/issues) for support an
 feature requests. Include sanitized logs and diagnostics, but never a Plex token
 or a complete media URL.
 
-Current roadmap themes are connection fallback/selection, Direct Play controls,
-richer stream metadata, Plex collection catalogs, and deployment smoke coverage.
+Current roadmap themes are richer stream metadata and Plex collection catalogs.
 
 See [CHANGELOG.md](CHANGELOG.md) for maintained-fork release history.

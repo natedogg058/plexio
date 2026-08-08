@@ -100,6 +100,43 @@ def _position_ms(*, total, start, duration_ms, started_at, now):
     return min(int(initial + elapsed), duration_ms)
 
 
+async def _open_playback_response(
+    *,
+    requester,
+    connections,
+    part_key,
+    access_token,
+    headers,
+):
+    for connection_index, (stream_base, _kind) in enumerate(connections):
+        upstream = stream_base / part_key[1:] % {'X-Plex-Token': access_token}
+        has_fallback = connection_index < len(connections) - 1
+        try:
+            response = await requester(
+                upstream,
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(
+                    total=None,
+                    sock_connect=15,
+                    sock_read=60,
+                ),
+            )
+        except (aiohttp.ClientError, TimeoutError):
+            if has_fallback:
+                logger.warning('Plex playback connection failed; trying fallback')
+                continue
+            raise
+        if response.status not in {502, 503, 504} or not has_fallback:
+            return response
+        await response.read()
+        response.close()
+        logger.warning(
+            'Plex playback returned HTTP %s; trying fallback',
+            response.status,
+        )
+    raise RuntimeError('No Plex playback connection was available')
+
+
 async def proxy_playback(
     request,
     *,
@@ -110,11 +147,6 @@ async def proxy_playback(
     part_key,
     identifier,
 ):
-    upstream = (
-        configuration.streaming_url
-        / part_key[1:]
-        % {'X-Plex-Token': configuration.access_token}
-    )
     fwd = {}
     rng = request.headers.get('range')
     if rng:
@@ -122,10 +154,15 @@ async def proxy_playback(
 
     method = request.method.upper()
     requester = client.head if method == 'HEAD' else client.get
-    resp = await requester(
-        upstream,
+    configured_connections = getattr(configuration, 'direct_play_connections', None)
+    if configured_connections is None:
+        configured_connections = [(configuration.streaming_url, None)]
+    resp = await _open_playback_response(
+        requester=requester,
+        connections=configured_connections,
+        part_key=part_key,
+        access_token=configuration.access_token,
         headers=fwd,
-        timeout=aiohttp.ClientTimeout(total=None, sock_connect=15, sock_read=60),
     )
     total, start = _total_and_start(resp)
     passthrough = {

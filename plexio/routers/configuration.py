@@ -159,6 +159,11 @@ async def create_session(
             detail='Sessions are not enabled',
         )
     resources = await fetch_plex_resources(http, account_token, client_identifier)
+    configured_urls = [
+        config.discovery_url,
+        config.streaming_url,
+        *(connection.url for connection in config.streaming_connections),
+    ]
     urls_authorized = all(
         is_authorized_connection(
             resources,
@@ -166,7 +171,7 @@ async def create_session(
             url=url,
             server_token=config.access_token,
         )
-        for url in (config.discovery_url, config.streaming_url)
+        for url in configured_urls
     )
     if not urls_authorized:
         raise HTTPException(

@@ -12,6 +12,8 @@ export const formSchema = z.object({
         type: z.string(),
       }),
     ),
+  includeDirectPlay: z.boolean(),
+  includeConnectionFallbacks: z.boolean(),
   includeTranscodeOriginal: z.boolean(),
   includeTranscodeDown: z.boolean(),
   transcodeDownQualities: z.array(z.string()).optional(),

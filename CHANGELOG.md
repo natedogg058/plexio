@@ -2,7 +2,12 @@
 
 ## Unreleased
 
-See the pull requests linked from the next GitHub release.
+- Added a Direct Play switch so shared-server users can choose Plex transcodes
+  when original-file playback is unavailable.
+- Added optional, labelled Direct Play choices for all authorized local, remote,
+  and Plex Relay server connections.
+- Playback-reporting streams now retry alternate connections after network
+  errors and HTTP 502/503/504 responses.
 
 ## v0.8.2
 

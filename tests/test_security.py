@@ -12,7 +12,7 @@ from pydantic import ValidationError
 from yarl import URL
 
 from plexio.dependencies import get_addon_configuration
-from plexio.models.addon import AddonConfiguration
+from plexio.models.addon import AddonConfiguration, PlexConnectionKind
 from plexio.plex.media_server_api import check_server_connection
 from plexio.plex.plex_tv import is_authorized_connection
 from plexio.rate_limit import InMemoryRateLimiter
@@ -56,6 +56,33 @@ class ConfigurationValidationTests(TestCase):
                 )
         with self.assertRaises(ValidationError):
             AddonConfiguration(**configuration_dict(unexpected='value'))
+
+    def test_direct_play_connections_are_ordered_and_deduplicated(self):
+        model = AddonConfiguration(
+            **configuration_dict(
+                streamingUrl='https://primary.plex.direct:32400',
+                streamingConnectionKind='remote',
+                includeConnectionFallbacks=True,
+                streamingConnections=[
+                    {
+                        'url': 'https://primary.plex.direct:32400/',
+                        'kind': 'remote',
+                    },
+                    {
+                        'url': 'https://relay.plex.direct:443',
+                        'kind': 'relay',
+                    },
+                ],
+            )
+        )
+
+        self.assertEqual(
+            model.direct_play_connections,
+            [
+                (URL('https://primary.plex.direct:32400'), PlexConnectionKind.remote),
+                (URL('https://relay.plex.direct'), PlexConnectionKind.relay),
+            ],
+        )
 
 
 class LegacyConfigurationTests(IsolatedAsyncioTestCase):
