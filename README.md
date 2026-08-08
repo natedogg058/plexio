@@ -56,10 +56,13 @@ orchestrator. Common settings are:
 | `ENABLE_LEGACY_URLS` | `false` | Opt in to token-bearing legacy URLs when sessions are disabled. |
 | `MAX_REQUEST_BODY_SIZE` | `65536` | Maximum POST/PUT/PATCH body size in bytes. |
 | `PUBLIC_API_RATE_LIMIT` | `60` | Per-client connection-test/session requests per minute. |
-| `PLEX_REQUESTS_TIMEOUT` | `20` | Plex request timeout in seconds. |
+| `PLEX_REQUESTS_TIMEOUT` | `10` | Plex request timeout in seconds. |
 | `PLEX_MATCHING_TOKEN` | unset | Token from an owned server for metadata matching on shared servers. |
 | `CACHE_TYPE` | `memory` | `memory` or `redis`. |
 | `REDIS_URL` | `redis://redis:6379/0` | Redis connection URL. |
+| `PLEX_MATCH_CACHE_TTL` | `86400` | IMDb/Plex ID cache lifetime in seconds. |
+| `PLEX_METADATA_CACHE_TTL` | `300` | Plex media/episode cache lifetime in seconds. |
+| `STREAM_CACHE_TTL` | `300` | Complete Stremio stream-response cache lifetime in seconds. |
 | `CORS_ORIGIN_REGEX` | built-in | Override allowed configure-page browser origins. |
 
 Session administration uses the `X-Admin-Key` header:
@@ -72,7 +75,13 @@ curl -X DELETE -H 'X-Admin-Key: your-key' \
 
 Legacy configuration URLs expose the Plex access token in browser history,
 reverse-proxy logs, and the Stremio addon URL. Leave them disabled unless you
-understand that tradeoff.
+understand that tradeoff. The production image disables raw request access logs
+so a rejected legacy URL cannot write its embedded token to container logs.
+
+For a persistent cache, run a private Redis service beside Plexio, set
+`CACHE_TYPE=redis`, and leave Redis unpublished from the host. This preserves
+matching results across Plexio updates and restarts. Cached stream responses
+replace the Plex access token with an internal placeholder before storage.
 
 ## Reverse proxies
 
@@ -117,6 +126,17 @@ change its catalog ID.
 - `GET /api/v1/health/{session_id}` also checks that install's Plex server.
 
 The deep health response reports reachability only and never returns a token.
+
+## Performance diagnostics
+
+Stream responses include `X-Plexio-Cache: HIT|MISS` and a standard
+`Server-Timing` header with cache, Plex lookup, stream-building, and total
+durations. Plexio also emits one sanitized summary log per stream response; it
+does not log media IDs, URLs, session IDs, filenames, or access tokens.
+
+Plex metadata matches found in multiple libraries are fetched concurrently.
+Short-lived metadata and final-response caches reduce repeated episode and
+version lookups while still reflecting library changes promptly.
 
 ## Development
 

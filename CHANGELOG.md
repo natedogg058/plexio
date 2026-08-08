@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.10.0
+
+- Added expiring, token-scrubbed complete stream-response caching and short-lived
+  Plex media/episode metadata caching, with configurable TTLs.
+- Added persistent Redis deployment support for cache entries that survive
+  Plexio updates and restarts.
+- Parallelized matching media-detail requests across Plex libraries.
+- Prioritized broadly compatible, moderate-bitrate Direct Play versions ahead
+  of very large/high-bitrate remuxes while preserving quality metadata.
+- Added sanitized stream timing logs plus `Server-Timing` and cache-status
+  response headers for playback-start diagnostics.
+- Reduced the default Plex API timeout to 10 seconds and disabled raw uvicorn
+  access logs so rejected legacy URLs cannot persist embedded Plex tokens.
+
 ## v0.9.0
 
 - Added a Direct Play switch so shared-server users can choose Plex transcodes

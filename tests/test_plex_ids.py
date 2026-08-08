@@ -2,9 +2,10 @@ from types import SimpleNamespace
 from unittest import IsolatedAsyncioTestCase, TestCase
 from unittest.mock import AsyncMock, patch
 
-from fastapi import HTTPException
+from fastapi import HTTPException, Response
 from yarl import URL
 
+from plexio.cache import MemoryCache
 from plexio.models.plex import PlexEpisodeMeta, PlexMediaMeta
 from plexio.models.stremio import StremioMediaType
 from plexio.models.utils import (
@@ -189,8 +190,9 @@ class PlexIdRouteTests(IsolatedAsyncioTestCase):
 
         response = await get_stream(
             request=SimpleNamespace(),
+            response=Response(),
             http=http,
-            cache=object(),
+            cache=MemoryCache(),
             configuration=STREAM_CONFIGURATION,
             stremio_type=StremioMediaType.movie,
             media_id='plexio:rk-123',
@@ -198,12 +200,12 @@ class PlexIdRouteTests(IsolatedAsyncioTestCase):
 
         self.assertEqual(len(response.streams), 1)
         self.assertIn('/library/parts/1/file.mkv', response.streams[0].url)
-        get_by_rating_key.assert_awaited_once_with(
-            client=http,
-            url=CONFIGURATION.discovery_url,
-            token='secret',
-            rating_key='123',
-        )
+        get_by_rating_key.assert_awaited_once()
+        kwargs = get_by_rating_key.await_args.kwargs
+        self.assertEqual(kwargs['client'], http)
+        self.assertEqual(kwargs['url'], CONFIGURATION.discovery_url)
+        self.assertEqual(kwargs['token'], 'secret')
+        self.assertEqual(kwargs['rating_key'], '123')
 
     @patch('plexio.routers.addon.get_all_episodes', new_callable=AsyncMock)
     @patch('plexio.routers.addon.get_media_by_rating_key', new_callable=AsyncMock)
@@ -235,8 +237,9 @@ class PlexIdRouteTests(IsolatedAsyncioTestCase):
 
         response = await get_stream(
             request=SimpleNamespace(),
+            response=Response(),
             http=object(),
-            cache=object(),
+            cache=MemoryCache(),
             configuration=STREAM_CONFIGURATION,
             stremio_type=StremioMediaType.series,
             media_id='plexio:rk-100:2:3',
@@ -274,8 +277,9 @@ class PlexIdRouteTests(IsolatedAsyncioTestCase):
         with patch.object(settings, 'trust_proxy_headers', True):
             response = await get_stream(
                 request=request,
+                response=Response(),
                 http=object(),
-                cache=object(),
+                cache=MemoryCache(),
                 configuration=configuration,
                 stremio_type=StremioMediaType.movie,
                 media_id='plexio:rk-123',

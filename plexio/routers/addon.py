@@ -1,8 +1,10 @@
+import logging
 from itertools import chain
+from time import perf_counter
 from typing import Annotated
 
 from aiohttp import ClientSession
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from redis.asyncio.client import Redis
 from yarl import URL
 
@@ -41,9 +43,18 @@ from plexio.plex.media_server_api import (
 )
 from plexio.plex.playback import b64decode_path, proxy_playback
 from plexio.settings import settings
+from plexio.stream_cache import (
+    cache_get,
+    cache_set,
+    configuration_cache_namespace,
+    deserialize_stream_response,
+    resource_cache_key,
+    serialize_stream_response,
+)
 
 router = APIRouter()
 router.dependencies.append(Depends(set_sentry_user))
+logger = logging.getLogger(__name__)
 
 RECENT_SORT = 'Date Added (desc)'
 
@@ -417,6 +428,112 @@ async def get_meta(
     return StremioMetaResponse(meta=meta)
 
 
+async def _resolve_rating_key_stream_media(
+    *,
+    http,
+    cache,
+    configuration,
+    namespace: str,
+    stremio_type: StremioMediaType,
+    rating_key_value: str,
+) -> list[PlexMediaMeta]:
+    parts = rating_key_value.split(':')
+    if stremio_type != StremioMediaType.series or len(parts) != 3:
+        return await get_media_by_rating_key(
+            client=http,
+            url=configuration.discovery_url,
+            token=configuration.access_token,
+            rating_key=rating_key_value,
+            cache=cache,
+            cache_namespace=namespace,
+        )
+
+    show_rating_key, season, episode = parts
+    shows = await get_media_by_rating_key(
+        client=http,
+        url=configuration.discovery_url,
+        token=configuration.access_token,
+        rating_key=show_rating_key,
+        cache=cache,
+        cache_namespace=namespace,
+    )
+    if not shows:
+        return []
+    episodes = await get_all_episodes(
+        client=http,
+        url=configuration.discovery_url,
+        token=configuration.access_token,
+        key=shows[0].key,
+        cache=cache,
+        cache_namespace=namespace,
+    )
+    episode_rating_key = next(
+        (
+            item.rating_key
+            for item in episodes
+            if str(item.parent_index) == season and str(item.index) == episode
+        ),
+        None,
+    )
+    if not episode_rating_key:
+        return []
+    return await get_media_by_rating_key(
+        client=http,
+        url=configuration.discovery_url,
+        token=configuration.access_token,
+        rating_key=episode_rating_key,
+        cache=cache,
+        cache_namespace=namespace,
+    )
+
+
+async def _resolve_stream_media(
+    *,
+    http,
+    cache,
+    configuration,
+    namespace: str,
+    stremio_type: StremioMediaType,
+    media_id: str,
+) -> list[PlexMediaMeta]:
+    if media_id.startswith('tt'):
+        plex_id = await stremio_to_plex_id(
+            client=http,
+            url=configuration.discovery_url,
+            token=configuration.access_token,
+            cache=cache,
+            stremio_id=media_id,
+            media_type=STREMIO_TO_PLEX_MEDIA_TYPE[stremio_type],
+            cache_namespace=namespace,
+        )
+        if not plex_id:
+            return []
+        media_id = plex_id
+    elif is_rating_key_plexio_id(media_id):
+        return await _resolve_rating_key_stream_media(
+            http=http,
+            cache=cache,
+            configuration=configuration,
+            namespace=namespace,
+            stremio_type=stremio_type,
+            rating_key_value=plexio_id_to_rating_key(media_id),
+        )
+    elif media_id.startswith('plexio:'):
+        try:
+            media_id = plexio_id_to_guid(media_id)
+        except ValueError:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND) from None
+
+    return await get_media(
+        client=http,
+        url=configuration.discovery_url,
+        token=configuration.access_token,
+        guid=media_id,
+        cache=cache,
+        cache_namespace=namespace,
+    )
+
+
 @router.get(
     '/{session_id}/stream/{stremio_type}/{media_id:path}.json',
     response_model_exclude_none=True,
@@ -427,107 +544,93 @@ async def get_meta(
 )
 async def get_stream(
     request: Request,
+    response: Response,
     http: Annotated[ClientSession, Depends(get_http_client)],
     cache: Annotated[Redis, Depends(get_cache)],
     configuration: Annotated[AddonConfiguration, Depends(get_addon_configuration)],
     stremio_type: StremioMediaType,
     media_id: str,
 ) -> StremioStreamsResponse:
-    if media_id.startswith('tt'):
-        plex_id = await stremio_to_plex_id(
-            client=http,
-            url=configuration.discovery_url,
-            token=configuration.access_token,
-            cache=cache,
-            stremio_id=media_id,
-            media_type=STREMIO_TO_PLEX_MEDIA_TYPE[stremio_type],
-        )
-        if not plex_id:
-            return StremioStreamsResponse()
+    started = perf_counter()
+    namespace = configuration_cache_namespace(configuration)
+    config_path = ''
+    if configuration.report_playback:
+        config_path = request.url.path.split('/stream/')[0]
+    stream_key = resource_cache_key(
+        namespace,
+        'stream',
+        f'{stremio_type.value}:{media_id}:{config_path}',
+    )
 
-        media = await get_media(
-            client=http,
-            url=configuration.discovery_url,
-            token=configuration.access_token,
-            guid=plex_id,
-        )
-    elif is_rating_key_plexio_id(media_id):
-        rating_key_value = plexio_id_to_rating_key(media_id)
-        parts = rating_key_value.split(':')
-
-        if stremio_type == StremioMediaType.series and len(parts) == 3:
-            show_rating_key, season, episode = parts
-
-            shows = await get_media_by_rating_key(
-                client=http,
-                url=configuration.discovery_url,
-                token=configuration.access_token,
-                rating_key=show_rating_key,
-            )
-            if not shows:
-                return StremioStreamsResponse()
-
-            show = shows[0]
-            episodes = await get_all_episodes(
-                client=http,
-                url=configuration.discovery_url,
-                token=configuration.access_token,
-                key=show.key,
-            )
-
-            episode_rating_key = next(
-                (
-                    item.rating_key
-                    for item in episodes
-                    if str(item.parent_index) == season and str(item.index) == episode
-                ),
-                None,
-            )
-            if not episode_rating_key:
-                return StremioStreamsResponse()
-
-            media = await get_media_by_rating_key(
-                client=http,
-                url=configuration.discovery_url,
-                token=configuration.access_token,
-                rating_key=episode_rating_key,
-            )
-        else:
-            media = await get_media_by_rating_key(
-                client=http,
-                url=configuration.discovery_url,
-                token=configuration.access_token,
-                rating_key=rating_key_value,
-            )
-    elif media_id.startswith('plexio:'):
-        # Backward compatibility for legacy GUID-based internal IDs.
+    cache_started = perf_counter()
+    cached = await cache_get(cache, stream_key) if settings.stream_cache_ttl else None
+    cache_ms = (perf_counter() - cache_started) * 1000
+    if cached is not None:
         try:
-            plex_id = plexio_id_to_guid(media_id)
+            result = deserialize_stream_response(
+                cached,
+                configuration.access_token,
+            )
         except ValueError:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND) from None
-        media = await get_media(
-            client=http,
-            url=configuration.discovery_url,
-            token=configuration.access_token,
-            guid=plex_id,
-        )
-    else:
-        media = await get_media(
-            client=http,
-            url=configuration.discovery_url,
-            token=configuration.access_token,
-            guid=media_id,
-        )
+            logger.warning('Ignoring invalid cached stream response')
+        else:
+            total_ms = (perf_counter() - started) * 1000
+            response.headers['X-Plexio-Cache'] = 'HIT'
+            response.headers['Server-Timing'] = (
+                f'cache;dur={cache_ms:.1f}, total;dur={total_ms:.1f}'
+            )
+            logger.info(
+                'Stream response type=%s cache=hit streams=%d total_ms=%.1f',
+                stremio_type.value,
+                len(result.streams),
+                total_ms,
+            )
+            return result
+
+    lookup_started = perf_counter()
+    media = await _resolve_stream_media(
+        http=http,
+        cache=cache,
+        configuration=configuration,
+        namespace=namespace,
+        stremio_type=stremio_type,
+        media_id=media_id,
+    )
+    lookup_ms = (perf_counter() - lookup_started) * 1000
+
+    build_started = perf_counter()
     play_prefix = None
     if configuration.report_playback:
         base = _public_base_url(request)
-        cfg_path = request.url.path.split('/stream/')[0]
-        play_prefix = f'{base}{cfg_path}/play'
-    return StremioStreamsResponse(
+        play_prefix = f'{base}{config_path}/play'
+    result = StremioStreamsResponse(
         streams=chain.from_iterable(
             meta.get_stremio_streams(configuration, play_prefix) for meta in media
         ),
     )
+    build_ms = (perf_counter() - build_started) * 1000
+
+    cache_write_started = perf_counter()
+    await cache_set(
+        cache,
+        stream_key,
+        serialize_stream_response(result, configuration.access_token),
+        ttl=settings.stream_cache_ttl,
+    )
+    cache_ms += (perf_counter() - cache_write_started) * 1000
+    total_ms = (perf_counter() - started) * 1000
+    response.headers['X-Plexio-Cache'] = 'MISS'
+    response.headers['Server-Timing'] = (
+        f'cache;dur={cache_ms:.1f}, plex;dur={lookup_ms:.1f}, '
+        f'build;dur={build_ms:.1f}, total;dur={total_ms:.1f}'
+    )
+    logger.info(
+        'Stream response type=%s cache=miss streams=%d total_ms=%.1f',
+        stremio_type.value,
+        len(result.streams),
+        total_ms,
+    )
+    return result
 
 
 @router.api_route(

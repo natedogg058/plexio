@@ -86,6 +86,9 @@ AUDIO_CODEC_LABELS = {
     'truehd': 'TrueHD',
 }
 
+HIGH_BITRATE_THRESHOLD_KBPS = 40_000
+HIGH_SIZE_THRESHOLD_BYTES = 40 * 1024**3
+
 
 def _codec_label(codec, aliases):
     if not codec:
@@ -193,6 +196,54 @@ def _bitrate_label(media, part):
         value = f'{bitrate / 1000:.1f}'.rstrip('0').rstrip('.')
         return f'{value} Mbps'
     return f'{bitrate:g} Kbps'
+
+
+def _number(value, default=0):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _playback_priority(indexed_media):
+    """Prefer broadly compatible, moderate-size versions for faster startup."""
+    original_index, media = indexed_media
+    parts = media.get('Part') or [{}]
+    part = parts[0]
+    streams = part.get('Stream', [])
+    video_stream = next(
+        (stream for stream in streams if stream.get('streamType') == 1),
+        {},
+    )
+    codec = str(media.get('videoCodec') or video_stream.get('codec') or '').casefold()
+    codec_rank = {
+        'h264': 0,
+        'avc': 0,
+        'hevc': 1,
+        'h265': 1,
+        'vp9': 2,
+        'av1': 3,
+    }.get(codec, 4)
+    container = str(media.get('container') or part.get('container') or '').casefold()
+    container_rank = {'mp4': 0, 'm4v': 0, 'mkv': 1}.get(container, 2)
+    bitrate = _number(media.get('bitrate') or part.get('bitrate'))
+    size = _number(part.get('size'))
+    is_heavy = bitrate > HIGH_BITRATE_THRESHOLD_KBPS or size > HIGH_SIZE_THRESHOLD_BYTES
+    height = _number(media.get('height'))
+    if not height:
+        resolution = str(media.get('videoResolution') or '').casefold()
+        height = {'4k': 2160, '2160': 2160, '1080': 1080, '720': 720}.get(
+            resolution,
+            0,
+        )
+    return (
+        is_heavy,
+        codec_rank,
+        container_rank,
+        -height,
+        bitrate or float('inf'),
+        original_index,
+    )
 
 
 def _size_label(value):
@@ -391,7 +442,7 @@ class PlexMediaMeta(BaseModel):
         from plexio.models.stremio import StremioStream
 
         streams = []
-        for i, media in enumerate(self.media):
+        for i, media in sorted(enumerate(self.media), key=_playback_priority):
             name = f'{configuration.server_name} {self.library_section_title}'
             part = media['Part'][0]
             filename = os.path.basename(part['file'])

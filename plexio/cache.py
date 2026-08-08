@@ -1,4 +1,5 @@
 import asyncio
+import time
 from abc import ABC, abstractmethod
 from enum import Enum
 
@@ -23,7 +24,7 @@ class CacheType(Enum):
 
 class AbstractCache(ABC):
     @abstractmethod
-    async def set(self, key, value):
+    async def set(self, key, value, *, ttl: int = PLEX_CACHE_TTL):
         pass
 
     @abstractmethod
@@ -39,11 +40,20 @@ class MemoryCache(AbstractCache):
     def __init__(self):
         self._cache = {}
 
-    async def set(self, key, value):
-        self._cache[key] = value
+    async def set(self, key, value, *, ttl: int = PLEX_CACHE_TTL):
+        if ttl <= 0:
+            return
+        self._cache[key] = (value, time.monotonic() + ttl)
 
     async def get(self, key):
-        return self._cache.get(key)
+        cached = self._cache.get(key)
+        if cached is None:
+            return None
+        value, expires_at = cached
+        if time.monotonic() >= expires_at:
+            self._cache.pop(key, None)
+            return None
+        return value
 
     async def close(self):
         pass
@@ -56,21 +66,27 @@ class RedisCache(AbstractCache):
     def __init__(self, redis_url):
         self._redis = Redis.from_url(url=redis_url)
 
-    async def set(self, key, value):
-        for _ in range(RedisCache.RETRY_TIMES):
+    async def set(self, key, value, *, ttl: int = PLEX_CACHE_TTL):
+        if ttl <= 0:
+            return
+        for attempt in range(RedisCache.RETRY_TIMES):
             try:
-                await self._redis.set(key, value, ex=PLEX_CACHE_TTL)
+                await self._redis.set(key, value, ex=ttl)
+                return
             except RedisConnectionError:
-                await asyncio.sleep(RedisCache.RETRY_BACKOFF_SEC)
+                if attempt < RedisCache.RETRY_TIMES - 1:
+                    await asyncio.sleep(RedisCache.RETRY_BACKOFF_SEC)
 
     async def get(self, key):
-        for _ in range(RedisCache.RETRY_TIMES):
+        for attempt in range(RedisCache.RETRY_TIMES):
             try:
                 if value := await self._redis.get(key):
                     return value.decode()
                 return None
             except RedisConnectionError:
-                await asyncio.sleep(RedisCache.RETRY_BACKOFF_SEC)
+                if attempt < RedisCache.RETRY_TIMES - 1:
+                    await asyncio.sleep(RedisCache.RETRY_BACKOFF_SEC)
+        return None
 
     async def close(self):
         await self._redis.close()

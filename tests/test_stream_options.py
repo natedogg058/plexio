@@ -74,6 +74,46 @@ class StreamOptionTests(TestCase):
         self.assertEqual(len(streams), 1)
         self.assertIn('Automatic connection fallback', streams[0].description)
 
+    def test_moderate_compatible_version_precedes_large_remux(self):
+        item = media()
+        item.media = [
+            {
+                'videoResolution': '4k',
+                'height': 2160,
+                'videoCodec': 'hevc',
+                'container': 'mkv',
+                'bitrate': 75_000,
+                'Part': [
+                    {
+                        'file': '/media/Example.Remux.mkv',
+                        'key': '/library/parts/1/remux.mkv',
+                        'size': 70 * 1024**3,
+                        'Stream': [],
+                    }
+                ],
+            },
+            {
+                'videoResolution': '1080',
+                'height': 1080,
+                'videoCodec': 'h264',
+                'container': 'mp4',
+                'bitrate': 12_000,
+                'Part': [
+                    {
+                        'file': '/media/Example.Compatible.mp4',
+                        'key': '/library/parts/1/compatible.mp4',
+                        'size': 8 * 1024**3,
+                        'Stream': [],
+                    }
+                ],
+            },
+        ]
+
+        streams = item.get_stremio_streams(configuration())
+
+        self.assertEqual(streams[0].behavior_hints.filename, 'Example.Compatible.mp4')
+        self.assertEqual(streams[2].behavior_hints.filename, 'Example.Remux.mkv')
+
     def test_stream_description_includes_normalized_source_details(self):
         item = media()
         item.media[0].update(

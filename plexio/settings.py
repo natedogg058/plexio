@@ -23,9 +23,12 @@ class Settings(BaseSettings):
         r'|https?:\/\/app\.strem\.io'
         r'|.*plexio\.stream|.*strem\.io|.*stremio\.com'
     )
-    plex_requests_timeout: int = 20
+    plex_requests_timeout: int = Field(default=10, ge=1, le=120)
     cache_type: CacheType = CacheType.memory
     redis_url: str = 'redis://redis:6379/0'
+    plex_match_cache_ttl: int = Field(default=86_400, ge=0, le=2_592_000)
+    plex_metadata_cache_ttl: int = Field(default=300, ge=0, le=86_400)
+    stream_cache_ttl: int = Field(default=300, ge=0, le=86_400)
     plex_matching_token: str | None = None
     # Public-facing URL behind a reverse proxy or tunnel. The configure page
     # falls back to window.location.origin when this is unset.
