@@ -60,6 +60,200 @@ def _external_subtitles(subtitle_streams, base_url, access_token):
     ]
 
 
+VIDEO_CODEC_LABELS = {
+    'av1': 'AV1',
+    'avc': 'H.264',
+    'h264': 'H.264',
+    'h265': 'HEVC',
+    'hevc': 'HEVC',
+    'mpeg2video': 'MPEG-2',
+    'mpeg4': 'MPEG-4',
+    'vc1': 'VC-1',
+    'vp9': 'VP9',
+}
+
+AUDIO_CODEC_LABELS = {
+    'aac': 'AAC',
+    'ac3': 'AC-3',
+    'alac': 'ALAC',
+    'dca': 'DTS',
+    'dca-ma': 'DTS-HD MA',
+    'dts': 'DTS',
+    'eac3': 'E-AC-3',
+    'flac': 'FLAC',
+    'mp3': 'MP3',
+    'opus': 'Opus',
+    'truehd': 'TrueHD',
+}
+
+
+def _codec_label(codec, aliases):
+    if not codec:
+        return None
+    value = str(codec).strip()
+    return aliases.get(value.casefold(), value.upper())
+
+
+def _resolution_label(media):
+    value = str(media.get('videoResolution') or '').strip().casefold()
+    aliases = {
+        '4k': '4K',
+        '2160': '4K',
+        '2160p': '4K',
+        '2k': '2K',
+        'sd': 'SD',
+    }
+    if value in aliases:
+        return aliases[value]
+    if value.isdigit():
+        return f'{value}p'
+    if value[:-1].isdigit() and value[-1:] in {'p', 'i'}:
+        return value
+    if value:
+        return value.upper()
+
+    try:
+        height = int(media.get('height') or 0)
+    except (TypeError, ValueError):
+        return None
+    if height >= 2000:
+        return '4K'
+    if height:
+        return f'{height}p'
+    return None
+
+
+def _is_truthy(value):
+    return value is True or str(value).strip().casefold() in {'1', 'true', 'yes'}
+
+
+def _dynamic_range_label(media, video_stream):
+    display_values = (
+        media.get('videoDynamicRange'),
+        video_stream.get('displayTitle'),
+        video_stream.get('extendedDisplayTitle'),
+        video_stream.get('colorTrc'),
+    )
+    display = ' '.join(str(value) for value in display_values if value).casefold()
+    labels = []
+    if _is_truthy(video_stream.get('DOVIPresent')) or any(
+        marker in display for marker in ('dolby vision', 'dovi')
+    ):
+        labels.append('Dolby Vision')
+    if any(marker in display for marker in ('hdr10+', 'hdr10plus')):
+        labels.append('HDR10+')
+    elif any(marker in display for marker in ('hdr10', 'smpte2084', 'pq')):
+        labels.append('HDR10')
+    elif 'hlg' in display or 'arib-std-b67' in display:
+        labels.append('HLG')
+    elif 'hdr' in display:
+        labels.append('HDR')
+    return ' / '.join(labels) or None
+
+
+def _channel_label(stream):
+    layout = stream.get('audioChannelLayout') or stream.get('channelLayout')
+    if layout:
+        return str(layout).upper()
+    try:
+        channels = int(stream.get('channels') or 0)
+    except (TypeError, ValueError):
+        return None
+    return {1: '1.0', 2: '2.0', 6: '5.1', 8: '7.1'}.get(
+        channels,
+        f'{channels}ch' if channels else None,
+    )
+
+
+def _audio_labels(media, streams):
+    labels = []
+    for stream in streams:
+        if stream.get('streamType') != 2:
+            continue
+        codec = _codec_label(stream.get('codec'), AUDIO_CODEC_LABELS)
+        channel = _channel_label(stream)
+        label = ' '.join(value for value in (codec, channel) if value)
+        if label and label not in labels:
+            labels.append(label)
+    if not labels:
+        codec = _codec_label(media.get('audioCodec'), AUDIO_CODEC_LABELS)
+        if codec:
+            labels.append(codec)
+    return ' / '.join(labels) or None
+
+
+def _bitrate_label(media, part):
+    try:
+        bitrate = float(media.get('bitrate') or part.get('bitrate') or 0)
+    except (TypeError, ValueError):
+        return None
+    if bitrate <= 0:
+        return None
+    if bitrate >= 1000:
+        value = f'{bitrate / 1000:.1f}'.rstrip('0').rstrip('.')
+        return f'{value} Mbps'
+    return f'{bitrate:g} Kbps'
+
+
+def _size_label(value):
+    try:
+        size = float(value)
+    except (TypeError, ValueError):
+        return None
+    if size <= 0:
+        return None
+    units = ('B', 'KB', 'MB', 'GB', 'TB')
+    unit = units[0]
+    for unit in units:
+        if size < 1024 or unit == units[-1]:
+            break
+        size /= 1024
+    precision = 0 if unit == 'B' else 1
+    return f'{size:.{precision}f} {unit}'
+
+
+def _source_details(media, part, streams):
+    video_stream = next(
+        (stream for stream in streams if stream.get('streamType') == 1),
+        {},
+    )
+    details = (
+        _codec_label(
+            media.get('videoCodec') or video_stream.get('codec'),
+            VIDEO_CODEC_LABELS,
+        ),
+        _dynamic_range_label(media, video_stream),
+        _audio_labels(media, streams),
+        _bitrate_label(media, part),
+    )
+    return ' · '.join(detail for detail in details if detail)
+
+
+def _stream_description(
+    *,
+    filename,
+    quality,
+    source_details,
+    audio_languages,
+    subtitle_languages,
+    video_size,
+):
+    lines = [filename, quality]
+    if source_details:
+        lines.append(f'Source: {source_details}')
+    media_notes = []
+    if audio_languages:
+        media_notes.append(f'Audio: {"/".join(sorted(audio_languages))}')
+    if subtitle_languages:
+        media_notes.append(f'Subtitles: {"/".join(sorted(subtitle_languages))}')
+    size = _size_label(video_size)
+    if size:
+        media_notes.append(size)
+    if media_notes:
+        lines.append(' · '.join(media_notes))
+    return '\n'.join(lines)
+
+
 class PlexMediaType(str, Enum):
     show = 'show'
     movie = 'movie'
@@ -199,13 +393,18 @@ class PlexMediaMeta(BaseModel):
         streams = []
         for i, media in enumerate(self.media):
             name = f'{configuration.server_name} {self.library_section_title}'
-            filename = os.path.basename(media['Part'][0]['file'])
-            video_size = media['Part'][0].get('size')
+            part = media['Part'][0]
+            filename = os.path.basename(part['file'])
+            video_size = part.get('size')
+            part_streams = part.get('Stream', [])
+            resolution = _resolution_label(media)
+            resolution_suffix = f' {resolution}' if resolution else ''
+            source_details = _source_details(media, part, part_streams)
 
             audio_languages = set()
             subtitles_languages = set()
             subtitle_streams = []
-            for part_stream in media['Part'][0].get('Stream', []):
+            for part_stream in part_streams:
                 if part_stream['streamType'] == 2:
                     audio_languages.add(
                         get_flag_emoji(part_stream.get('languageTag', 'Unknown')),
@@ -216,11 +415,6 @@ class PlexMediaMeta(BaseModel):
                     )
                     if 'key' in part_stream:
                         subtitle_streams.append(part_stream)
-
-            description_template = '{filename}\n{quality}\n{languages}'
-            languages = '/'.join(sorted(audio_languages))
-            if subtitles_languages:
-                languages += f' ({"/".join(sorted(subtitles_languages))})'
 
             if getattr(configuration, 'include_direct_play', True):
                 connections = getattr(
@@ -266,16 +460,18 @@ class PlexMediaMeta(BaseModel):
                             else f'Alternate {kind_label}'
                         )
                     quality_description = (
-                        f'Direct Play {media.get("videoResolution", "")} '
-                        f'· {connection_label}'
+                        f'Direct Play{resolution_suffix} · {connection_label}'
                     )
                     streams.append(
                         StremioStream(
                             name=name,
-                            description=description_template.format(
+                            description=_stream_description(
                                 filename=filename,
                                 quality=quality_description,
-                                languages=languages,
+                                source_details=source_details,
+                                audio_languages=audio_languages,
+                                subtitle_languages=subtitles_languages,
+                                video_size=video_size,
                             ),
                             url=direct_play_url,
                             subtitles=_external_subtitles(
@@ -306,16 +502,17 @@ class PlexMediaMeta(BaseModel):
                 }
             )
             if configuration.include_transcode_original:
-                quality_description = (
-                    f'Transcode {media.get("videoResolution", "")} (original)'
-                )
+                quality_description = f'Transcode{resolution_suffix} · Original'
                 streams.append(
                     StremioStream(
                         name=name,
-                        description=description_template.format(
+                        description=_stream_description(
                             filename=filename,
                             quality=quality_description,
-                            languages=languages,
+                            source_details=source_details,
+                            audio_languages=audio_languages,
+                            subtitle_languages=subtitles_languages,
+                            video_size=video_size,
                         ),
                         url=str(transcode_url % {'videoQuality': 100}),
                         subtitles=_external_subtitles(
@@ -337,13 +534,18 @@ class PlexMediaMeta(BaseModel):
                     if media['width'] <= quality_params['min_width']:
                         continue
                     quality_description = f'Transcode {quality_params["name"]}'
+                    if resolution:
+                        quality_description += f' · Source {resolution}'
                     streams.append(
                         StremioStream(
                             name=name,
-                            description=description_template.format(
+                            description=_stream_description(
                                 filename=filename,
                                 quality=quality_description,
-                                languages=languages,
+                                source_details=source_details,
+                                audio_languages=audio_languages,
+                                subtitle_languages=subtitles_languages,
+                                video_size=video_size,
                             ),
                             url=str(transcode_url % quality_params['plex_args']),
                             subtitles=_external_subtitles(

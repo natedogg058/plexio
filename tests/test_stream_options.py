@@ -73,3 +73,78 @@ class StreamOptionTests(TestCase):
 
         self.assertEqual(len(streams), 1)
         self.assertIn('Automatic connection fallback', streams[0].description)
+
+    def test_stream_description_includes_normalized_source_details(self):
+        item = media()
+        item.media[0].update(
+            {
+                'videoResolution': '4k',
+                'videoCodec': 'hevc',
+                'bitrate': 17_862,
+            }
+        )
+        part = item.media[0]['Part'][0]
+        part['size'] = 25 * 1024**3
+        part['Stream'] = [
+            {
+                'streamType': 1,
+                'codec': 'hevc',
+                'displayTitle': '4K HDR10 (HEVC Main 10)',
+                'colorTrc': 'smpte2084',
+                'DOVIPresent': True,
+            },
+            {
+                'streamType': 2,
+                'codec': 'eac3',
+                'channels': 6,
+                'languageTag': 'en',
+            },
+            {
+                'streamType': 2,
+                'codec': 'aac',
+                'channels': 2,
+                'languageTag': 'ja',
+            },
+            {
+                'streamType': 3,
+                'id': 7,
+                'key': '/library/streams/7',
+                'displayTitle': 'English (SRT)',
+                'languageTag': 'en',
+            },
+        ]
+
+        stream = item.get_stremio_streams(configuration())[0]
+
+        self.assertIn('Direct Play 4K · Primary Remote', stream.description)
+        self.assertIn(
+            'Source: HEVC · Dolby Vision / HDR10 · E-AC-3 5.1 / AAC 2.0 · 17.9 Mbps',
+            stream.description,
+        )
+        self.assertIn('Audio: 🇬🇧/🇯🇵', stream.description)
+        self.assertIn('Subtitles: 🇬🇧', stream.description)
+        self.assertIn('25.0 GB', stream.description)
+        self.assertNotIn('/media/', stream.description)
+        self.assertNotIn('secret', stream.description)
+        self.assertEqual(stream.behavior_hints.filename, 'Example.mkv')
+        self.assertEqual(stream.behavior_hints.video_size, 25 * 1024**3)
+
+    def test_stream_description_handles_missing_and_partial_metadata(self):
+        item = media()
+        item.media[0].pop('videoResolution')
+        item.media[0]['height'] = 'not-a-number'
+        item.media[0]['bitrate'] = 'unknown'
+        item.media[0]['Part'][0].pop('size')
+        item.media[0]['Part'][0]['Stream'] = [
+            {'streamType': 2, 'channels': 'unknown'},
+            {'streamType': 3},
+        ]
+
+        stream = item.get_stremio_streams(configuration())[0]
+
+        self.assertEqual(
+            stream.description,
+            'Example.mkv\nDirect Play · Primary Remote\n'
+            'Audio: Unknown · Subtitles: Unknown',
+        )
+        self.assertIsNone(stream.behavior_hints.video_size)

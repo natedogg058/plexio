@@ -8,6 +8,9 @@
   and Plex Relay server connections.
 - Playback-reporting streams now retry alternate connections after network
   errors and HTTP 502/503/504 responses.
+- Stream descriptions now normalize source resolution, video/audio codecs,
+  Dolby Vision and HDR variants, audio channels, bitrate, languages, subtitles,
+  and human-readable file size while retaining Stremio filename/size hints.
 
 ## v0.8.2
 

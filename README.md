@@ -13,7 +13,8 @@ Plexio is independent and is not affiliated with Plex or Stremio.
 - Clearly labelled alternate-connection streams, with automatic proxy fallback.
 - Continue Watching, Recently Added, searchable library, and sort catalogs.
 - IMDb IDs when available, with Plex-native IDs for personal or unmatched media.
-- Stremio stream metadata including filename and file size.
+- Stremio stream metadata including resolution, codecs, HDR format, audio
+  channels, bitrate, languages, filename, and file size.
 - Server-side Plex authentication for reliable self-hosted sign-in.
 - Short install URLs backed by encrypted, revocable SQLite sessions.
 - Optional playback reporting through a range-aware playback proxy.
