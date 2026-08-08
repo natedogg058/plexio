@@ -8,9 +8,10 @@ while still recording ongoing watch time for clients that consume the stream dur
 playback. We do not scrobble; Plex applies its own watched threshold.
 """
 
+import asyncio
 import base64
 import logging
-import time
+from time import monotonic
 
 import aiohttp
 from fastapi.responses import Response, StreamingResponse
@@ -29,6 +30,14 @@ def b64decode_path(token: str) -> str:
 
 def _client_id(identifier: str) -> str:
     return f'plexio-{identifier}'
+
+
+def _client_headers(identifier: str) -> dict[str, str]:
+    return {
+        'X-Plex-Client-Identifier': _client_id(identifier),
+        'X-Plex-Product': PLEX_PRODUCT,
+        'X-Plex-Device-Name': PLEX_PRODUCT,
+    }
 
 
 async def _timeline(
@@ -55,11 +64,7 @@ async def _timeline(
     try:
         async with client.get(
             timeline_url,
-            headers={
-                'X-Plex-Client-Identifier': _client_id(identifier),
-                'X-Plex-Product': PLEX_PRODUCT,
-                'X-Plex-Device-Name': PLEX_PRODUCT,
-            },
+            headers=_client_headers(identifier),
             timeout=aiohttp.ClientTimeout(total=5),
         ) as response:
             await response.read()
@@ -74,6 +79,52 @@ async def _timeline(
         # Timeline reporting is optional and must never interrupt playback.
         logger.warning('Unable to send Plex timeline update', exc_info=True)
         return False
+
+
+async def _playback_heartbeat(
+    client,
+    *,
+    url,
+    token,
+    rating_key,
+    total,
+    start,
+    duration_ms,
+    identifier,
+    started_at,
+    stopped,
+):
+    """Report playback independently of downstream media reads.
+
+    External players can fill their own buffer and stop pulling response chunks
+    for several minutes. Keeping this loop in its own task prevents that idle
+    downstream connection from also pausing Plex timeline updates.
+    """
+    now = started_at
+    while True:
+        await _timeline(
+            client,
+            url=url,
+            token=token,
+            rating_key=rating_key,
+            state='playing',
+            time_ms=_position_ms(
+                total=total,
+                start=start,
+                duration_ms=duration_ms,
+                started_at=started_at,
+                now=now,
+            ),
+            duration_ms=duration_ms,
+            identifier=identifier,
+        )
+        if stopped.is_set():
+            return
+        try:
+            await asyncio.wait_for(stopped.wait(), timeout=PING_INTERVAL)
+            return
+        except TimeoutError:
+            now = monotonic()
 
 
 def _total_and_start(resp):
@@ -118,7 +169,10 @@ async def _open_playback_response(
                 timeout=aiohttp.ClientTimeout(
                     total=None,
                     sock_connect=15,
-                    sock_read=60,
+                    # Buffered external players can intentionally leave the
+                    # upstream response idle for minutes. The downstream
+                    # connection lifecycle remains the cancellation boundary.
+                    sock_read=None,
                 ),
             )
         except (aiohttp.ClientError, TimeoutError):
@@ -147,7 +201,7 @@ async def proxy_playback(
     part_key,
     identifier,
 ):
-    fwd = {}
+    fwd = _client_headers(identifier)
     rng = request.headers.get('range')
     if rng:
         fwd['Range'] = rng
@@ -189,37 +243,35 @@ async def proxy_playback(
 
     async def streamer():
         started_at = None
-        last_ping_at = 0.0
-        started = False
+        heartbeat = None
+        heartbeat_stopped = asyncio.Event()
         try:
             async for chunk in resp.content.iter_chunked(CHUNK):
-                yield chunk
-                now = time.monotonic()
                 if started_at is None:
-                    started_at = now
-                if not started or now - last_ping_at >= PING_INTERVAL:
-                    started = True
-                    last_ping_at = now
-                    await _timeline(
-                        client,
-                        url=configuration.discovery_url,
-                        token=configuration.access_token,
-                        rating_key=rating_key,
-                        state='playing',
-                        time_ms=_position_ms(
+                    started_at = monotonic()
+                    heartbeat = asyncio.create_task(
+                        _playback_heartbeat(
+                            client,
+                            url=configuration.discovery_url,
+                            token=configuration.access_token,
+                            rating_key=rating_key,
                             total=total,
                             start=start,
                             duration_ms=duration_ms,
+                            identifier=identifier,
                             started_at=started_at,
-                            now=now,
+                            stopped=heartbeat_stopped,
                         ),
-                        duration_ms=duration_ms,
-                        identifier=identifier,
+                        name='plexio-playback-heartbeat',
                     )
+                yield chunk
         finally:
+            heartbeat_stopped.set()
             resp.close()
-            if started and started_at is not None:
-                now = time.monotonic()
+            if heartbeat is not None:
+                await heartbeat
+            if started_at is not None:
+                now = monotonic()
                 await _timeline(
                     client,
                     url=configuration.discovery_url,

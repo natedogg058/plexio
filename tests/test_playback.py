@@ -1,3 +1,4 @@
+import asyncio
 from types import SimpleNamespace
 from unittest import IsolatedAsyncioTestCase, TestCase
 from unittest.mock import patch
@@ -168,12 +169,12 @@ class PlaybackProxyTests(IsolatedAsyncioTestCase):
         self.assertTrue(client.timeline_responses[0].read_called)
         self.assertTrue(client.timeline_responses[0].closed)
 
-    @patch('plexio.plex.playback.time.monotonic')
+    @patch('plexio.plex.playback.monotonic')
     async def test_proxy_reports_elapsed_progress_and_forwards_range(
         self,
         monotonic,
     ):
-        monotonic.side_effect = [100.0, 111.0, 112.0]
+        monotonic.side_effect = [100.0, 112.0]
         upstream = FakeResponse(
             headers={
                 'Content-Length': '1000',
@@ -207,15 +208,67 @@ class PlaybackProxyTests(IsolatedAsyncioTestCase):
         self.assertEqual(body, b'firstsecond')
         self.assertTrue(upstream.closed)
         self.assertEqual(client.calls[0][2]['headers']['Range'], 'bytes=0-')
+        self.assertEqual(
+            client.calls[0][2]['headers']['X-Plex-Client-Identifier'],
+            'plexio-session-id',
+        )
+        self.assertIsNone(client.calls[0][2]['timeout'].sock_read)
         timeline_urls = [url for _, url, _ in client.calls if '/:/timeline' in str(url)]
         self.assertEqual(
             [url.query['state'] for url in timeline_urls],
-            ['playing', 'playing', 'stopped'],
+            ['playing', 'stopped'],
         )
         self.assertEqual(
             [url.query['time'] for url in timeline_urls],
-            ['0', '11000', '12000'],
+            ['0', '12000'],
         )
+
+    @patch('plexio.plex.playback.PING_INTERVAL', 0.01)
+    async def test_heartbeat_continues_while_downstream_is_idle(self):
+        upstream = FakeResponse(
+            headers={
+                'Content-Length': '1000',
+                'Content-Type': 'video/x-matroska',
+            },
+            chunks=(b'first', b'second'),
+        )
+        client = FakeClient(upstream)
+        configuration = SimpleNamespace(
+            streaming_url=URL('https://plex.example.test'),
+            discovery_url=URL('https://plex.example.test'),
+            access_token='secret',
+        )
+        request = SimpleNamespace(method='GET', headers={})
+
+        response = await proxy_playback(
+            request,
+            client=client,
+            configuration=configuration,
+            rating_key='42',
+            duration_ms=60_000,
+            part_key='/library/parts/1/file.mkv',
+            identifier='session-id',
+        )
+        iterator = response.body_iterator
+
+        self.assertEqual(await anext(iterator), b'first')
+        await asyncio.sleep(0.045)
+
+        states = [
+            url.query['state']
+            for _, url, _ in client.calls
+            if '/:/timeline' in str(url)
+        ]
+        self.assertGreaterEqual(states.count('playing'), 2)
+
+        await iterator.aclose()
+        states = [
+            url.query['state']
+            for _, url, _ in client.calls
+            if '/:/timeline' in str(url)
+        ]
+        self.assertEqual(states[-1], 'stopped')
+        self.assertTrue(upstream.closed)
 
     async def test_head_probe_returns_headers_without_streaming_or_timeline(self):
         upstream = FakeResponse(

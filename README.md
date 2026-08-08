@@ -91,7 +91,9 @@ are in [the reverse-proxy guide](docs/reverse-proxy.md).
 
 If you enable “Report playback to Plex”, Direct Play streams pass through
 Plexio. The public URL must then be reachable by every Stremio device and your
-proxy must permit byte-range requests and long-running responses.
+proxy must permit byte-range requests and long-running responses. Plexio sends
+timeline heartbeats independently of media reads, so buffered external players
+remain active in Plex even while they temporarily stop requesting bytes.
 
 ## Playback controls
 

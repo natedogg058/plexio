@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.10.1
+
+- Moved Plex timeline heartbeats into an independent playback task so external
+  players remain active when their downstream buffers pause media reads.
+- Removed the playback proxy's fixed upstream read timeout and attached the
+  same stable Plex client identity to media and timeline requests.
+
 ## v0.10.0
 
 - Added expiring, token-scrubbed complete stream-response caching and short-lived
