@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.9.0
 
 - Added a Direct Play switch so shared-server users can choose Plex transcodes
   when original-file playback is unavailable.
