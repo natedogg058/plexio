@@ -12,6 +12,7 @@ Plexio is independent and is not affiliated with Plex or Stremio.
 - Local, remote, shared-server, and Plex Relay connections.
 - Clearly labelled alternate-connection streams, with automatic proxy fallback.
 - Continue Watching, Recently Added, searchable library, and sort catalogs.
+- Opt-in, individually selected Plex collection catalogs.
 - IMDb IDs when available, with Plex-native IDs for personal or unmatched media.
 - Stremio stream metadata including resolution, codecs, HDR format, audio
   channels, bitrate, languages, filename, and file size.
@@ -102,6 +103,14 @@ access token from a Plex server you own. Plexio does not bypass Plex remote-play
 rules; depending on Plex policy, remote personal-video playback may require Plex
 Pass or Remote Watch Pass. Never post access tokens in issues or logs.
 
+## Plex collections
+
+Collection discovery is disabled by default, including for existing installs.
+Select one or more movie/show libraries, enable “Include Plex collection
+catalogs”, and choose the collections you want as separate Stremio rows. Each
+row is paginated and tied to its original library; collection renames do not
+change its catalog ID.
+
 ## Health checks
 
 - `GET /api/v1/health` checks Plexio and its session store.
@@ -132,6 +141,7 @@ Use [GitHub Issues](https://github.com/natedogg058/plexio/issues) for support an
 feature requests. Include sanitized logs and diagnostics, but never a Plex token
 or a complete media URL.
 
-Current roadmap themes are richer stream metadata and Plex collection catalogs.
+Current and future work is tracked in the repository's GitHub issues and
+milestones.
 
 See [CHANGELOG.md](CHANGELOG.md) for maintained-fork release history.

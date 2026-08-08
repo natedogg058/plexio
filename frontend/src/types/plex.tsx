@@ -33,3 +33,11 @@ export interface PlexSection {
   title: string;
   type: 'movie' | 'show';
 }
+
+export interface PlexCollection {
+  ratingKey: string;
+  sectionKey: string;
+  sectionTitle: string;
+  title: string;
+  type: 'movie' | 'show';
+}

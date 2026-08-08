@@ -11,6 +11,8 @@
 - Stream descriptions now normalize source resolution, video/audio codecs,
   Dolby Vision and HDR variants, audio channels, bitrate, languages, subtitles,
   and human-readable file size while retaining Stremio filename/size hints.
+- Added opt-in discovery and individual selection of Plex movie/show
+  collections as stable, paginated Stremio catalogs.
 
 ## v0.8.2
 

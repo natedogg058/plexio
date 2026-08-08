@@ -37,6 +37,8 @@ export const ServerNameField: FC<Props> = ({ form, servers }) => {
               form.resetField('discoveryUrl', { defaultValue: '' });
               form.resetField('streamingUrl', { defaultValue: '' });
               form.resetField('sections', { defaultValue: [] });
+              form.resetField('includeCollections', { defaultValue: false });
+              form.resetField('collections', { defaultValue: [] });
               field.onChange(s);
             }}
             defaultValue={field.value}

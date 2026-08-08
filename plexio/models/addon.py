@@ -1,9 +1,9 @@
 from enum import Enum
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from yarl import URL
 
-from plexio.models.plex import PlexLibrarySection, Resolution
+from plexio.models.plex import PlexLibrarySection, PlexMediaType, Resolution
 from plexio.models.utils import to_camel
 
 
@@ -48,6 +48,23 @@ class PlexStreamingConnection(BaseModel):
         return validate_plex_url(value)
 
 
+class PlexCollectionCatalog(BaseModel):
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        extra='forbid',
+        populate_by_name=True,
+    )
+
+    rating_key: str = Field(pattern=r'^[0-9]+$')
+    section_key: str = Field(pattern=r'^[A-Za-z0-9._-]+$', max_length=128)
+    title: str = Field(min_length=1, max_length=255)
+    type: PlexMediaType
+
+    @property
+    def catalog_id(self) -> str:
+        return f'plexio-collection-{self.section_key}-{self.rating_key}'
+
+
 class AddonConfiguration(BaseModel):
     model_config = ConfigDict(
         alias_generator=to_camel,
@@ -67,6 +84,11 @@ class AddonConfiguration(BaseModel):
     server_name: str = Field(min_length=1, max_length=255)
     version: str = Field(default='0.0.1', min_length=1, max_length=64)
     sections: list[PlexLibrarySection] = Field(default_factory=list, max_length=100)
+    include_collections: bool = False
+    collections: list[PlexCollectionCatalog] = Field(
+        default_factory=list,
+        max_length=200,
+    )
     include_direct_play: bool = True
     include_connection_fallbacks: bool = False
     include_transcode_original: bool = False
@@ -79,6 +101,18 @@ class AddonConfiguration(BaseModel):
     @classmethod
     def validate_plex_url(cls, value):
         return validate_plex_url(value)
+
+    @model_validator(mode='after')
+    def validate_collections(self):
+        section_types = {section.key: section.type for section in self.sections}
+        seen = set()
+        for collection in self.collections:
+            if section_types.get(collection.section_key) != collection.type:
+                raise ValueError('Collection must belong to a configured section')
+            if collection.catalog_id in seen:
+                raise ValueError('Collections must be unique')
+            seen.add(collection.catalog_id)
+        return self
 
     def to_storage_dict(self) -> dict:
         config = self.model_dump(by_alias=True)
@@ -109,3 +143,7 @@ class AddonConfiguration(BaseModel):
                 seen.add(key)
                 deduplicated.append((URL(key), kind))
         return deduplicated
+
+    @property
+    def configured_collections(self) -> list[PlexCollectionCatalog]:
+        return self.collections if self.include_collections else []

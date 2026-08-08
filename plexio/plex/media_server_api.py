@@ -95,6 +95,38 @@ async def get_section_media(
     return [PlexMediaMeta(**meta) for meta in metadata]
 
 
+async def get_collection_media(
+    *,
+    client: ClientSession,
+    url: URL,
+    token: str,
+    rating_key: str,
+    skip: int,
+) -> list[PlexMediaMeta]:
+    json = await get_json(
+        client=client,
+        url=url / 'library/collections' / rating_key / 'items',
+        params={
+            'includeGuids': 1,
+            'X-Plex-Container-Start': skip,
+            'X-Plex-Container-Size': 100,
+            'X-Plex-Token': token,
+        },
+    )
+    metadata = json['MediaContainer'].get('Metadata', [])
+    media = []
+    seen = set()
+    for item in metadata:
+        if item.get('type') not in {'movie', 'show'}:
+            continue
+        identity = str(item.get('ratingKey') or item.get('guid') or '')
+        if not identity or identity in seen:
+            continue
+        seen.add(identity)
+        media.append(PlexMediaMeta(**item))
+    return media
+
+
 async def get_on_deck(
     *,
     client: ClientSession,

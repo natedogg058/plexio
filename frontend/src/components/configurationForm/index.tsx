@@ -14,6 +14,7 @@ import {
   IncludeTranscodeDownFields,
   IncludePlexTvField,
   ReportPlaybackField,
+  CollectionsField,
 } from '@/components/configurationForm/fields';
 import {
   formSchema,
@@ -23,6 +24,7 @@ import { Icons } from '@/components/icons';
 import { Button } from '@/components/ui/button.tsx';
 import { Form } from '@/components/ui/form';
 import usePMSSections from '@/hooks/usePMSSections.tsx';
+import usePMSCollections from '@/hooks/usePMSCollections.tsx';
 import { createSession, getPublicConfig } from '@/services/BackendService.tsx';
 import { PlexServer } from '@/types/plex.tsx';
 
@@ -59,6 +61,8 @@ const ConfigurationForm: FC<Props> = ({
       includePlexTv: false,
       reportPlayback: false,
       sections: [],
+      includeCollections: false,
+      collections: [],
     },
   });
 
@@ -67,6 +71,14 @@ const ConfigurationForm: FC<Props> = ({
 
   const discoveryUrl = form.watch('discoveryUrl');
   const sections = usePMSSections(discoveryUrl, server?.accessToken ?? null);
+  const selectedSections = form.watch('sections');
+  const includeCollections = form.watch('includeCollections');
+  const { collections, loading: collectionsLoading } = usePMSCollections(
+    discoveryUrl,
+    server?.accessToken ?? null,
+    selectedSections,
+    includeCollections,
+  );
 
   const onSubmit: SubmitHandler<ConfigurationFormType> = async (
     configuration,
@@ -85,6 +97,14 @@ const ConfigurationForm: FC<Props> = ({
     const includeConnectionFallbacks =
       configuration.includeDirectPlay &&
       configuration.includeConnectionFallbacks;
+    const configuredSectionKeys = new Set(
+      configuration.sections.map((section) => section.key),
+    );
+    const availableCollectionIds = new Set(
+      collections.map(
+        (collection) => `${collection.sectionKey}:${collection.ratingKey}`,
+      ),
+    );
 
     const normalizedConfiguration = {
       ...configuration,
@@ -108,6 +128,15 @@ const ConfigurationForm: FC<Props> = ({
                   ? 'local'
                   : 'remote',
             }))
+        : [],
+      collections: configuration.includeCollections
+        ? configuration.collections.filter(
+            (collection) =>
+              configuredSectionKeys.has(collection.sectionKey) &&
+              availableCollectionIds.has(
+                `${collection.sectionKey}:${collection.ratingKey}`,
+              ),
+          )
         : [],
       sections: configuration.sections.filter((item) =>
         sections.some((section) => section.key === item.key),
@@ -175,7 +204,14 @@ const ConfigurationForm: FC<Props> = ({
           </>
         )}
         {discoveryUrl && (
-          <SectionsField form={form} sections={sections}></SectionsField>
+          <>
+            <SectionsField form={form} sections={sections}></SectionsField>
+            <CollectionsField
+              form={form}
+              collections={collections}
+              loading={collectionsLoading}
+            />
+          </>
         )}
         <IncludeDirectPlayField form={form} />
         {form.watch('includeDirectPlay') && (

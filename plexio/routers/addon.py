@@ -32,6 +32,7 @@ from plexio.models.utils import (
 from plexio.plex.media_server_api import (
     SORT_OPTIONS,
     get_all_episodes,
+    get_collection_media,
     get_media,
     get_media_by_rating_key,
     get_on_deck,
@@ -244,6 +245,20 @@ async def get_manifest(
                     ],
                 ),
             )
+        for collection in configuration.configured_collections:
+            section_title = next(
+                section.title
+                for section in configuration.sections
+                if section.key == collection.section_key
+            )
+            catalogs.append(
+                StremioCatalogManifest(
+                    id=collection.catalog_id,
+                    type=PLEX_TO_STREMIO_MEDIA_TYPE[collection.type],
+                    name=f'Collection: {collection.title} ({section_title}) | {sv}',
+                    extra=[{'name': 'skip', 'isRequired': False}],
+                ),
+            )
 
         name += f' ({configuration.server_name})'
         description += f' Your installation ID: {installation_id or session_id}'
@@ -295,8 +310,15 @@ async def get_catalog(
     catalog_id: str,
     extra: str = '',
 ) -> StremioCatalog:
-    extras = dict(e.split('=') for e in extra.split('&') if e)
-    skip = extras.get('skip', 0)
+    extras = {}
+    for value in extra.split('&'):
+        key, separator, item = value.partition('=')
+        if separator:
+            extras[key] = item
+    try:
+        skip = max(int(extras.get('skip', 0)), 0)
+    except (TypeError, ValueError):
+        skip = 0
     if catalog_id == 'plexio-ondeck':
         items = await get_on_deck(
             client=http,
@@ -306,6 +328,26 @@ async def get_catalog(
         metas = await _map_on_deck(http, items, configuration, stremio_type)
     elif catalog_id == 'plexio-recent':
         metas = await _recently_added(http, configuration, stremio_type, skip)
+    elif catalog_id.startswith('plexio-collection-'):
+        collection = next(
+            (
+                item
+                for item in configuration.configured_collections
+                if item.catalog_id == catalog_id
+                and PLEX_TO_STREMIO_MEDIA_TYPE[item.type] == stremio_type
+            ),
+            None,
+        )
+        if collection is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+        media = await get_collection_media(
+            client=http,
+            url=configuration.discovery_url,
+            token=configuration.access_token,
+            rating_key=collection.rating_key,
+            skip=skip,
+        )
+        metas = [item.to_stremio_meta_review(configuration) for item in media]
     else:
         media = await get_section_media(
             client=http,
