@@ -24,8 +24,20 @@ async def get_addon_configuration(
 ) -> AddonConfiguration | None:
     # Legacy form: the full config is base64-encoded in the URL itself.
     if base64_cfg is not None:
-        decoded = base64.b64decode(base64_cfg)
-        return AddonConfiguration(**json.loads(decoded))
+        if not settings.enable_legacy_urls:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail='Legacy configuration URLs are disabled',
+            )
+        try:
+            padding = '=' * (-len(base64_cfg) % 4)
+            decoded = base64.urlsafe_b64decode(base64_cfg + padding)
+            return AddonConfiguration(**json.loads(decoded))
+        except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail='Invalid legacy configuration URL',
+            ) from exc
     # Session form: config is stored server-side, keyed by session id.
     if session_id is not None:
         store = getattr(request.state, 'sessions', None)

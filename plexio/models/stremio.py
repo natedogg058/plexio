@@ -45,7 +45,7 @@ class StremioManifest(StremioBase):
     catalogs: list[StremioCatalogManifest]
     id_prefixes: list[str]
     behavior_hints: dict
-    contact_email: str
+    contact_email: str | None = None
 
 
 class StremioStreamBehaviorHints(StremioBase):

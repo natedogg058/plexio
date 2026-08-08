@@ -1,6 +1,6 @@
 import { FC, useEffect, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { encode as base64_encode } from 'js-base64';
+import { Base64 } from 'js-base64';
 import { SubmitHandler, useForm } from 'react-hook-form';
 import { v4 as uuidv4 } from 'uuid';
 import {
@@ -26,16 +26,24 @@ import { PlexServer } from '@/types/plex.tsx';
 
 interface Props {
   servers: PlexServer[];
+  accountToken: string;
+  clientIdentifier: string;
 }
 
-const ConfigurationForm: FC<Props> = ({ servers }) => {
+const ConfigurationForm: FC<Props> = ({
+  servers,
+  accountToken,
+  clientIdentifier,
+}) => {
   const [baseUrl, setBaseUrl] = useState<string | null>(null);
+  const [legacyUrlsEnabled, setLegacyUrlsEnabled] = useState(false);
 
   useEffect(() => {
     // Fetch once at mount. If the backend doesn't respond or BASE_URL isn't set,
     // baseUrl stays null and we fall back to window.location.origin below.
-    void getPublicConfig().then(({ baseUrl }) => {
+    void getPublicConfig().then(({ baseUrl, legacyUrlsEnabled }) => {
       setBaseUrl(baseUrl.length > 0 ? baseUrl : null);
+      setLegacyUrlsEnabled(legacyUrlsEnabled);
     });
   }, []);
 
@@ -90,16 +98,23 @@ const ConfigurationForm: FC<Props> = ({ servers }) => {
     // or the request fails.
     const sessionId = await createSession(
       normalizedConfiguration,
+      accountToken,
+      clientIdentifier,
       normalizedConfiguration.serverName,
     );
     let addonUrl: string;
     if (sessionId) {
       addonUrl = `${origin}/${sessionId}/manifest.json`;
-    } else {
-      const encodedConfiguration = base64_encode(
+    } else if (legacyUrlsEnabled) {
+      const encodedConfiguration = Base64.encodeURI(
         JSON.stringify(normalizedConfiguration),
       );
       addonUrl = `${origin}/${uuidv4()}/${encodedConfiguration}/manifest.json`;
+    } else {
+      window.alert(
+        'Plexio could not create a secure install session. Please retry or check the server logs.',
+      );
+      return;
     }
 
     if (action === 'clipboard') {
@@ -124,7 +139,12 @@ const ConfigurationForm: FC<Props> = ({ servers }) => {
         <ServerNameField form={form} servers={servers} />
         {server && (
           <>
-            <DiscoveryUrlField form={form} server={server} />
+            <DiscoveryUrlField
+              form={form}
+              server={server}
+              accountToken={accountToken}
+              clientIdentifier={clientIdentifier}
+            />
             <StreamingUrlField form={form} server={server} />
           </>
         )}

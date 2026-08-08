@@ -57,6 +57,7 @@ async def check_server_connection(
                 'X-Plex-Token': token,
             },
             timeout=settings.plex_requests_timeout,
+            allow_redirects=False,
         ) as response:
             if response.status != HTTPStatus.OK:
                 return False

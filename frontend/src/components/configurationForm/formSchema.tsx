@@ -1,14 +1,14 @@
 import { z } from 'zod';
 
 export const formSchema = z.object({
-  serverName: z.string(),
-  discoveryUrl: z.string(),
-  streamingUrl: z.string(),
+  serverName: z.string().min(1).max(255),
+  discoveryUrl: z.string().url().max(2048),
+  streamingUrl: z.string().url().max(2048),
   sections: z
     .array(
       z.object({
-        key: z.string(),
-        title: z.string(),
+        key: z.string().min(1).max(128),
+        title: z.string().min(1).max(255),
         type: z.string(),
       }),
     ),

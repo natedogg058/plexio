@@ -15,6 +15,7 @@ from plexio.models.utils import (
     rating_key_to_plexio_id,
 )
 from plexio.routers.addon import _public_base_url, get_meta, get_stream
+from plexio.settings import settings
 
 CONFIGURATION = SimpleNamespace(
     discovery_url=URL('https://plex.example.test'),
@@ -138,7 +139,11 @@ class PlexIdRouteTests(IsolatedAsyncioTestCase):
             url=URL('http://internal.test/session/stream/movie/id.json'),
         )
 
-        self.assertEqual(_public_base_url(request), 'https://plexio.example.test')
+        with patch.object(settings, 'trust_proxy_headers', True):
+            self.assertEqual(
+                _public_base_url(request),
+                'https://plexio.example.test',
+            )
 
     @patch('plexio.routers.addon.get_media_by_rating_key', new_callable=AsyncMock)
     async def test_meta_route_resolves_rating_key(self, get_by_rating_key):
@@ -266,14 +271,15 @@ class PlexIdRouteTests(IsolatedAsyncioTestCase):
             url=URL('http://internal.test/session-id/stream/movie/plexio:rk-123.json'),
         )
 
-        response = await get_stream(
-            request=request,
-            http=object(),
-            cache=object(),
-            configuration=configuration,
-            stremio_type=StremioMediaType.movie,
-            media_id='plexio:rk-123',
-        )
+        with patch.object(settings, 'trust_proxy_headers', True):
+            response = await get_stream(
+                request=request,
+                http=object(),
+                cache=object(),
+                configuration=configuration,
+                stremio_type=StremioMediaType.movie,
+                media_id='plexio:rk-123',
+            )
 
         self.assertEqual(len(response.streams), 1)
         self.assertTrue(

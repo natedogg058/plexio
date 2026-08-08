@@ -6,7 +6,10 @@ __pycache__
 .env
 .idea
 .venv
+*.db
+session.key
 
 frontend/node_modules
+frontend/dist
 diagnostics/
 *.bak-*

@@ -1,6 +1,7 @@
 import asyncio
 from types import SimpleNamespace
 from unittest import IsolatedAsyncioTestCase
+from unittest.mock import patch
 
 import aiohttp
 from fastapi import HTTPException
@@ -120,7 +121,11 @@ class PlexProxyTests(IsolatedAsyncioTestCase):
             url=URL('http://internal.test/api/v1/plex-pin'),
         )
 
-        self.assertEqual(_request_origin(request), 'https://plexio.example.test')
+        with patch.object(settings, 'trust_proxy_headers', True):
+            self.assertEqual(
+                _request_origin(request),
+                'https://plexio.example.test',
+            )
 
     async def test_resources_endpoint_keeps_token_out_of_query_string(self):
         client = FakeClient(FakeResponse([]))

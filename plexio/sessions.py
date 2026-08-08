@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import json
 import os
@@ -20,6 +21,10 @@ CREATE TABLE IF NOT EXISTS sessions (
     config_hash  TEXT
 )
 """
+
+
+class SessionCapacityError(RuntimeError):
+    pass
 
 
 def _utcnow() -> str:
@@ -74,11 +79,10 @@ async def init_sessions(settings):
     if 'config_hash' not in columns:
         await db.execute('ALTER TABLE sessions ADD COLUMN config_hash TEXT')
     await db.execute(
-        'CREATE INDEX IF NOT EXISTS idx_sessions_config_hash '
-        'ON sessions(config_hash)'
+        'CREATE INDEX IF NOT EXISTS idx_sessions_config_hash ON sessions(config_hash)'
     )
     await db.commit()
-    return SessionStore(db, fernet)
+    return SessionStore(db, fernet, max_sessions=settings.max_sessions)
 
 
 class SessionStore:
@@ -89,11 +93,23 @@ class SessionStore:
     exactly as the legacy decode path does.
     """
 
-    def __init__(self, db: aiosqlite.Connection, fernet: Fernet):
+    def __init__(
+        self,
+        db: aiosqlite.Connection,
+        fernet: Fernet,
+        *,
+        max_sessions: int = 1000,
+    ):
         self._db = db
         self._fernet = fernet
+        self._max_sessions = max_sessions
+        self._create_lock = asyncio.Lock()
 
     async def create(self, config: dict, label: str | None = None) -> str:
+        async with self._create_lock:
+            return await self._create(config, label)
+
+    async def _create(self, config: dict, label: str | None = None) -> str:
         config_hash = _config_hash(config)
         now = _utcnow()
         async with self._db.execute(
@@ -110,6 +126,10 @@ class SessionStore:
             )
             await self._db.commit()
             return existing[0]
+        async with self._db.execute('SELECT COUNT(*) FROM sessions') as cur:
+            count = (await cur.fetchone())[0]
+        if count >= self._max_sessions:
+            raise SessionCapacityError('Session capacity reached')
         session_id = str(uuid.uuid4())
         server_name = config.get('serverName') or config.get('server_name')
         payload = self._fernet.encrypt(json.dumps(config).encode()).decode()

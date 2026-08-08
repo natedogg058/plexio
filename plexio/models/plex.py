@@ -56,8 +56,8 @@ class PlexMediaType(str, Enum):
 
 
 class PlexLibrarySection(BaseModel):
-    key: str
-    title: str
+    key: str = Field(min_length=1, max_length=128)
+    title: str = Field(min_length=1, max_length=255)
     type: PlexMediaType
 
 
@@ -232,8 +232,8 @@ class PlexMediaMeta(BaseModel):
                     .decode()
                 )
                 direct_play_url = (
-                    f"{play_prefix}/{rk}/"
-                    f"{self.duration or media.get('duration') or 0}/{pk}"
+                    f'{play_prefix}/{rk}/'
+                    f'{self.duration or media.get("duration") or 0}/{pk}'
                 )
             else:
                 direct_play_url = str(

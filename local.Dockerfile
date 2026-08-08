@@ -1,8 +1,8 @@
-FROM python:3.11-alpine
+FROM python:3.11.15-slim
 
 WORKDIR /app
 
-COPY pyproject.toml pyproject.toml
+COPY requirements.lock requirements.lock
 COPY plexio plexio
 
-RUN pip install -e . --no-cache-dir
+RUN pip install --no-cache-dir --require-hashes -r requirements.lock

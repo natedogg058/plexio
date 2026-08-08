@@ -1,0 +1,39 @@
+name: Bug report
+description: Report reproducible Plexio behavior
+title: '[Bug]: '
+labels: ['bug']
+body:
+  - type: markdown
+    attributes:
+      value: Never post Plex tokens, session IDs, complete stream URLs, or private media paths.
+  - type: input
+    id: version
+    attributes:
+      label: Plexio version/image digest
+    validations:
+      required: true
+  - type: dropdown
+    id: client
+    attributes:
+      label: Stremio client
+      options: [Desktop, Web, Android TV, Android mobile, Other]
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem and reproduction steps
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Sanitized logs and diagnostics
+      description: Remove tokens, session IDs, full URLs, and private paths.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Safety check
+      options:
+        - label: I removed all Plex tokens and session IDs.
+          required: true

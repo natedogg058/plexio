@@ -17,19 +17,12 @@ const Header: FC<Props> = ({ plexUser, setPlexToken }) => {
 
   return (
     <div className="flex h-12 items-center">
-      <Button variant="ghost" size="icon">
-        <a href="https://github.com/vanchaxy/plexio">
+      <Button asChild variant="ghost" size="icon">
+        <a
+          aria-label="Plexio source code"
+          href="https://github.com/natedogg058/plexio"
+        >
           <Icons.gitHub className="h-5 w-5" />
-        </a>
-      </Button>
-      <Button variant="ghost" size="icon">
-        <a href="https://discord.gg/8RWUkebmDs">
-          <Icons.discord className="h-5 w-5" />
-        </a>
-      </Button>
-      <Button variant="ghost" size="icon">
-        <a href="mailto:support@plexio.stream">
-          <Icons.mail className="h-5 w-5" />
         </a>
       </Button>
       <div className="flex flex-1 items-center justify-end">

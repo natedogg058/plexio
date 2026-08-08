@@ -11,7 +11,7 @@ export const isServerAliveLocal = async (serverUrl: string, token: string) => {
   try {
     const response = await axios.get(serverUrl, {
       timeout: 25000,
-      params: {
+      headers: {
         'X-Plex-Token': token,
       },
     });
@@ -31,7 +31,7 @@ export const getSections = async (
       `${serverUrl}/library/sections`,
       {
         timeout: 25000,
-        params: {
+        headers: {
           'X-Plex-Token': token,
         },
       },

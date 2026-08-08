@@ -1,118 +1,124 @@
-# Plexio (natedogg058 fork)
+# Plexio
 
-> **This is a maintained fork of [vanchaxy/plexio](https://github.com/vanchaxy/plexio).**
-> Upstream is dormant (last release May 2025). This fork adds fixes and improvements for self-hosted deployments.
+Plexio is a self-hosted Stremio addon for discovering and streaming media from
+Plex. This repository is the actively maintained fork of
+[vanchaxy/plexio](https://github.com/vanchaxy/plexio).
 
-## What's different from upstream
+Plexio is independent and is not affiliated with Plex or Stremio.
 
-- **`behaviorHints.filename` on stream objects** — populates the Stremio-standard field used by clients for release fingerprinting (IntroDB skip intro, Trakt scrobbling, OpenSubtitles hash lookup). Closes a gap vs AIOStreams and other Stremio-standard addons. ([upstream PR #69](https://github.com/vanchaxy/plexio/pull/69))
-- **Wider default CORS regex** — covers localhost on any port, private LAN ranges (`192.168.x.x`, `10.x.x.x`, `172.16-31.x.x`), Tailscale tailnet domains (`*.ts.net`), and `app.strem.io`. Reduces friction for self-hosted deployments behind reverse proxies or on Tailscale. `CORS_ORIGIN_REGEX` env var override is preserved.
-- **`behaviorHints.videoSize` on stream objects** — exposes each version's file size so clients can display or choose by size. (0.3.1)
-- **`BASE_URL` env var** — sets the public origin used for install-URL generation behind a reverse proxy / Tailscale Funnel, instead of relying on `window.location.origin`. (0.3.0)
-- **Server-side sessions (optional)** — install URLs can reference a stored session id (`/{session_id}/...`) instead of embedding the full config (including the Plex token) as base64. Config is persisted in SQLite under `/data`; legacy base64 URLs continue to work unchanged. Requires a writable `/data` volume (see Installation). (0.4.0)
-- **Encrypted sessions + revocation** — stored session config is Fernet-encrypted at rest (`SESSION_ENCRYPTION_KEY`, or an auto-generated `session.key` next to the DB). Operators can list and revoke sessions via admin-gated `GET` / `DELETE /api/v1/sessions` (`ADMIN_KEY`). (0.4.1)
-- **Configure page uses sessions by default** — the configure UI now creates a server-side session on install and generates the short `/{session_id}/manifest.json` URL (Plex token never in the URL), automatically falling back to the legacy base64 URL if the session store is disabled or unreachable. (0.4.2)
-- **Idempotent session creation** — submitting an identical config returns the existing session instead of minting a duplicate, keeping the admin session list clean (e.g. clicking clipboard then Install no longer creates two). (0.4.3)
-- **Health endpoints** — `GET /api/v1/health` is a dependency-aware liveness probe (app + session store; 503 if the store is down), and `GET /api/v1/health/{session_id}` deep-checks whether that session's Plex backend is actually reachable (reachability only, never the token), so an uptime monitor can catch backend outages rather than just web-server outages. (0.5.0)
-- **Continue Watching & Recently Added catalogs** — adds discovery rows to the Stremio board: "Continue Watching" (Plex On Deck — in-progress movies plus next-up/in-progress episodes, the latter surfaced as their parent series, deduped) and "Recently Added", each split into Movies / Shows and shown only for the library types you've configured. Catalog items resolve through the normal meta/stream flow (imdb-matched where Plex has the id). Discovery rows only — these don't feed Stremio's native Continue Watching bar, and a series row opens the show page rather than resuming the exact episode. (0.6.0)
-- **Hybrid IMDb/rating-key IDs** — keeps standard IMDb IDs when Plex provides them, then falls back to validated Plex rating-key IDs for unmatched and personal movies, shows, and episodes. This restores stream resolution in Fusion and other Stremio-compatible clients without breaking legacy Plexio IDs. (0.8.0)
-- **Server-side Plex authentication proxy** — proxies PIN creation, token exchange, and server discovery through the backend so self-hosted installs no longer depend on Plex allowing browser-side cross-origin requests. Inputs and upstream failures are validated and covered by regression tests. (0.8.0)
-- **Reliable self-hosted Plex sign-in** — binds each Plex PIN to the configure page's public origin and supplies Plex's product context, allowing the Auth App to validate and return to self-hosted callback URLs. (0.8.1)
-- **Live playback reporting** — the opt-in playback proxy now sends conservative, elapsed-time Plex timeline updates during playback, supports Stremio HEAD probes, and builds externally reachable stream URLs from `BASE_URL` or forwarded proxy headers. (0.8.1)
+## Highlights
 
-## Installation
+- Direct Play and optional Plex transcoding streams.
+- Local, remote, shared-server, and Plex Relay connections.
+- Continue Watching, Recently Added, searchable library, and sort catalogs.
+- IMDb IDs when available, with Plex-native IDs for personal or unmatched media.
+- Stremio stream metadata including filename and file size.
+- Server-side Plex authentication for reliable self-hosted sign-in.
+- Short install URLs backed by encrypted, revocable SQLite sessions.
+- Optional playback reporting through a range-aware playback proxy.
+- Multi-architecture Docker images for `linux/amd64` and `linux/arm64`.
 
-Pull the published image:
+## Quick start
+
 ```bash
-docker run -d -p 7777:80 -v plexio-data:/data ghcr.io/natedogg058/plexio:latest
+docker run -d \
+  --name plexio \
+  -p 7777:80 \
+  -v plexio-data:/data \
+  --restart unless-stopped \
+  ghcr.io/natedogg058/plexio:latest
 ```
-Or build from source with `docker build -t plexio-fork .`.
 
-**Persistent storage (sessions):** the optional server-side session store keeps a SQLite DB at `/data/sessions.db`. The image creates `/data` owned by the `unit` app user (uid 999), so a Docker **named volume** (as above) inherits writable ownership automatically. If you bind-mount a host directory instead, `chown 999:999` it first. Disable the store entirely with `ENABLE_SESSIONS=false`, in which case no `/data` access is needed.
+Open `http://localhost:7777`, sign in to Plex, choose the server connections and
+libraries you want, then install the generated manifest in Stremio.
 
-**Session env vars:** `ADMIN_KEY` enables and protects the list/revoke endpoints (unset = those endpoints return 403). `SESSION_ENCRYPTION_KEY` sets the Fernet key for encryption at rest; if unset, a key file is created automatically alongside the database.
+Use a named volume as shown above. The container runs as unprivileged UID/GID
+`999`; if you use a bind mount, make its directory writable by that identity.
 
-**Reverse proxies and playback reporting:** set `BASE_URL` to Plexio's externally reachable URL, including `https://` and any path prefix (for example, `BASE_URL=https://plexio.example.com`). This is required when a proxy does not preserve `X-Forwarded-Proto` and `X-Forwarded-Host`. The “Report playback to Plex” option routes Direct Play media through Plexio, so that URL must be reachable from the device running Stremio.
+## Configuration
 
-### Remote Plex servers and Plex Pass
+Copy [`.env.example`](.env.example) when deploying through Compose or another
+orchestrator. Common settings are:
 
-Plexio does not itself require Plex Pass, but it does not bypass Plex's remote-playback rules. A Plex server on a VPS is normally considered remote. For remote personal-video playback, Plex currently requires at least one of the following: the server administrator has Plex Pass, the viewer has Plex Pass, or the viewer has a Remote Watch Pass. The server must also be reachable from Plexio and have Remote Access configured. Plex notes that servers hosted by online providers may not work with every provider. See Plex's [remote playback requirements](https://support.plex.tv/articles/requirements-for-remote-playback-of-personal-media/) and [server requirements](https://support.plex.tv/articles/200375666-plex-media-server-requirements/).
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `BASE_URL` | unset | Canonical public Plexio URL, strongly recommended behind a proxy. |
+| `ALLOWED_HOSTS` | unset | Comma-separated HTTP Host allowlist, for example `plexio.example.com`. |
+| `TRUST_PROXY_HEADERS` | `false` | Trust `X-Forwarded-Proto/Host`; enable only behind your own proxy. |
+| `ENABLE_SESSIONS` | `true` | Store encrypted configuration outside install URLs. |
+| `SESSION_DB_PATH` | `/data/sessions.db` | SQLite session database. |
+| `SESSION_ENCRYPTION_KEY` | auto-generated | Stable Fernet key; back it up if supplied manually. |
+| `MAX_SESSIONS` | `1000` | Maximum stored installs; identical configs are deduplicated. |
+| `ADMIN_KEY` | unset | Enables authenticated session list/revoke endpoints. |
+| `ENABLE_LEGACY_URLS` | `false` | Opt in to token-bearing legacy URLs when sessions are disabled. |
+| `MAX_REQUEST_BODY_SIZE` | `65536` | Maximum POST/PUT/PATCH body size in bytes. |
+| `PUBLIC_API_RATE_LIMIT` | `60` | Per-client connection-test/session requests per minute. |
+| `PLEX_REQUESTS_TIMEOUT` | `20` | Plex request timeout in seconds. |
+| `PLEX_MATCHING_TOKEN` | unset | Token from an owned server for metadata matching on shared servers. |
+| `CACHE_TYPE` | `memory` | `memory` or `redis`. |
+| `REDIS_URL` | `redis://redis:6379/0` | Redis connection URL. |
+| `CORS_ORIGIN_REGEX` | built-in | Override allowed configure-page browser origins. |
 
-## Roadmap
+Session administration uses the `X-Admin-Key` header:
 
-See [ISSUES](https://github.com/natedogg058/plexio/issues) for open work. Planned fork-specific additions:
-- Documentation expansion for self-hosting behind reverse proxies
-- Investigation of upstream toggle-default behaviour
+```bash
+curl -H 'X-Admin-Key: your-key' https://plexio.example.com/api/v1/sessions
+curl -X DELETE -H 'X-Admin-Key: your-key' \
+  https://plexio.example.com/api/v1/sessions/SESSION_ID
+```
 
----
+Legacy configuration URLs expose the Plex access token in browser history,
+reverse-proxy logs, and the Stremio addon URL. Leave them disabled unless you
+understand that tradeoff.
 
-*Original upstream README below.*
+## Reverse proxies
 
----
-# Plexio: Plex Interaction for Stremio
+Set `BASE_URL=https://plexio.example.com` and proxy to container port `80`.
+Detailed Nginx, Caddy, Cloudflare Tunnel, Tailscale, and troubleshooting examples
+are in [the reverse-proxy guide](docs/reverse-proxy.md).
 
-⚠️ Plexio is an independent project and is not in any way affiliated with Plex or Stremio. ⚠️
+If you enable “Report playback to Plex”, Direct Play streams pass through
+Plexio. The public URL must then be reachable by every Stremio device and your
+proxy must permit byte-range requests and long-running responses.
 
-Plexio is an addon that bridges the gap between Plex and Stremio, enabling seamless 
-integration of your Plex media within the Stremio interface. With Plexio, you can discover 
-and stream your Plex content directly in Stremio.
+## Shared servers and Plex Pass
 
-### Features
-* offers both direct and transcoded streams;
-* stream locally or from remote devices;
-* allows searching through your Plex library;
-* works with Cinemeta and other IMDB-based addons;
-* handles media without IMDB matching;
-* uses OAuth for safe login without sharing passwords;
-* fully open-source with self-hosting support.
+For media matching on a server shared with you, set `PLEX_MATCHING_TOKEN` to an
+access token from a Plex server you own. Plexio does not bypass Plex remote-play
+rules; depending on Plex policy, remote personal-video playback may require Plex
+Pass or Remote Watch Pass. Never post access tokens in issues or logs.
 
+## Health checks
 
-## Self-Hosting
-If you'd prefer to self-host Plexio, you can do so easily using Docker. Follow these steps:
+- `GET /api/v1/health` checks Plexio and its session store.
+- `GET /api/v1/health/{session_id}` also checks that install's Plex server.
 
-1. Use the following command to start a Plexio instance:
-   ```bash
-   docker run -d -p 7777:80 ghcr.io/vanchaxy/plexio
-   ```
-2. Plexio addon will be available at http://localhost:7777/.
+The deep health response reports reachability only and never returns a token.
 
-### Optional Configuration with Environment Variables
-* *CORS_ORIGIN_REGEX*: A regex pattern to define allowed CORS origins 
-(default: `https?:\/\/localhost:\d+|.*plexio.stream|.*strem.io|.*stremio.com`).
-* *PLEX_REQUESTS_TIMEOUT*: Timeout for Plex server requests in seconds (default: `20`).
-* *CACHE_TYPE*: Defines the cache type to use `memory`/`redis` (default: `memory`).
-* *REDIS_URL*: URL for a Redis instance if you use `redis` cache (default: `redis://redis:6399/0`).
-* *PLEX_MATCHING_TOKEN*: Auth token for Plex media matching (default: `None`).
-* *SENTRY_DSN*: DSN for error tracking with Sentry (default: `None`).
+## Development
 
-### Using addon with shared Plex server
-If you are using Plexio with a Plex server that you do not own (you will see a "shared" badge 
-next to the server name), you must provide the `PLEX_MATCHING_TOKEN` environment variable. 
-This token is an access token from a Plex server you own, which will be used to
-query the Plex API and resolve the Plex GUID using IMDB IDs.
+```bash
+uv run --extra dev ruff check .
+uv run --extra dev python -m unittest discover -s tests -v
+cd frontend
+npm ci
+npm run lint
+npm run build
+```
 
-To find your Plex authentication token, open any media on a Plex server you own.
-Look for the XML data for the media and find the `X-Plex-Token` in the URL. 
-Copy the token from the URL.
+For the live development stack, copy `.env.example` to `.env` and run:
 
-You can learn more about finding your authentication token in the official Plex article 
-["Finding an authentication token"](https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/).
+```bash
+docker compose up --build
+```
 
-## Local Development
-1. Fork the Repository.
-2. Clone the Repository:
-   ```bash
-   git clone https://github.com/yourusername/plexio.git
-   ```
-3. Create a `.env` file and configure the required environment variables.
-4. Run doker-compose:
-   ```bash
-   docker-compose up --build
-   ```
+## Support and roadmap
 
-## Contacts
+Use [GitHub Issues](https://github.com/natedogg058/plexio/issues) for support and
+feature requests. Include sanitized logs and diagnostics, but never a Plex token
+or a complete media URL.
 
-For bug reports, feature requests, or general questions, join our
-[Discord support forum](https://discord.gg/8RWUkebmDs).
+Current roadmap themes are connection fallback/selection, Direct Play controls,
+richer stream metadata, Plex collection catalogs, and deployment smoke coverage.
 
-Alternatively, you can open an issue directly in this repository.
+See [CHANGELOG.md](CHANGELOG.md) for maintained-fork release history.

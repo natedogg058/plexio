@@ -16,22 +16,22 @@ const QUESTIONS = [
   {
     id: 'is-plexio-secure',
     question: `Is Plexio secure?`,
-    answer: `Yes, Plexio is secure. The code is available on GitHub, allowing you to review and verify its security.
-             It uses OAuth for safe login without requiring you to share your Plex password. Additionally, if needed, 
-             you can terminate access through the "Authorized Devices" tab in your Plex account settings.`,
+    answer: `Plexio is designed to keep your Plex password out of the addon and stores install configuration in encrypted,
+             revocable server-side sessions by default. The source is public for review. You can revoke Plex access from
+             the "Authorized Devices" tab in your Plex account settings. Like any self-hosted service, keep it updated.`,
   },
   {
     id: 'how-plexio-work',
     question: `How does Plexio work?`,
-    answer: `Plexio uses the Plex API to match Stremio IMDB data to the corresponding Plex media ID and provide metadata
-             for your content. The addon itself is not involved in streaming; it only supplies metadata. Streaming works
-             directly between the Stremio client and your Plex Media Server.`,
+    answer: `Plexio uses the Plex API to match Stremio IMDb data to the corresponding Plex media and provide catalogs,
+             metadata, and streams. Direct Play normally goes from Stremio to Plex. Transcoding is handled by Plex, and
+             the optional playback-reporting mode proxies Direct Play through Plexio so it can report progress.`,
   },
   {
     id: 'where-find-support',
     question: `Where can I find support?`,
-    answer: `You can find support on our Discord channel, through GitHub issues, or by email. Links to all support 
-             channels are located in the top-left corner of the page.`,
+    answer: `Open an issue in the maintained Plexio GitHub repository using the link in the top-left corner. Never post
+             Plex tokens, session IDs, complete stream URLs, or private media paths.`,
   },
   {
     id: 'can-self-host',

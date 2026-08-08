@@ -6,14 +6,14 @@ export type SetPlexToken = (token: PlexToken) => void;
 
 const usePlexToken = (): [PlexToken, SetPlexToken] => {
   const [token, setToken] = useState<PlexToken>(() =>
-    localStorage.getItem('plexToken'),
+    sessionStorage.getItem('plexToken'),
   );
 
   useEffect(() => {
     if (token) {
-      localStorage.setItem('plexToken', token);
+      sessionStorage.setItem('plexToken', token);
     } else {
-      localStorage.removeItem('plexToken');
+      sessionStorage.removeItem('plexToken');
     }
   }, [token]);
 

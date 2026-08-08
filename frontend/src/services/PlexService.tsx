@@ -50,7 +50,7 @@ export const getPlexUser = async (
 ): Promise<PlexUser | null> => {
   try {
     const response = await axios.get<PlexUser>(`${PLEX_API_URL}/user`, {
-      params: {
+      headers: {
         'X-Plex-Product': PLEX_PRODUCT_NAME,
         'X-Plex-Client-Identifier': clientIdentifier,
         'X-Plex-Token': token,

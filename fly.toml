@@ -2,10 +2,10 @@ app = 'plexio'
 primary_region = 'iad'
 
 [build]
-  image = 'ghcr.io/vanchaxy/plexio:0.1.15'
+  dockerfile = 'Dockerfile'
 
 [env]
-  CACHE_TYPE = 'redis'
+  CACHE_TYPE = 'memory'
 
 [http_service]
   internal_port = 80
@@ -17,3 +17,7 @@ primary_region = 'iad'
 
 [[vm]]
   size = 'shared-cpu-1x'
+
+[[mounts]]
+  source = 'plexio_data'
+  destination = '/data'

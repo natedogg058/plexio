@@ -52,8 +52,16 @@ def _public_base_url(request: Request) -> str:
     if settings.base_url:
         candidate = settings.base_url
     else:
-        forwarded_proto = request.headers.get('x-forwarded-proto')
-        forwarded_host = request.headers.get('x-forwarded-host')
+        forwarded_proto = (
+            request.headers.get('x-forwarded-proto')
+            if settings.trust_proxy_headers
+            else None
+        )
+        forwarded_host = (
+            request.headers.get('x-forwarded-host')
+            if settings.trust_proxy_headers
+            else None
+        )
         scheme = (
             forwarded_proto.split(',', 1)[0].strip()
             if forwarded_proto
@@ -62,7 +70,10 @@ def _public_base_url(request: Request) -> str:
         host = (
             forwarded_host.split(',', 1)[0].strip()
             if forwarded_host
-            else request.url.netloc
+            else (
+                getattr(request.url, 'netloc', None)
+                or getattr(request.url, 'authority', None)
+            )
         )
         candidate = f'{scheme}://{host}'
 
@@ -258,7 +269,6 @@ async def get_manifest(
             'configurable': True,
             'configurationRequired': configuration is None,
         },
-        contactEmail='support@plexio.stream',
     )
 
 

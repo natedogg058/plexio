@@ -20,15 +20,23 @@ import {
   SelectValue,
 } from '@/components/ui/select.tsx';
 import { useToast } from '@/hooks/useToast';
+import { PlexToken } from '@/hooks/usePlexToken.tsx';
 import { isServerAliveRemote } from '@/services/BackendService.tsx';
 import { PlexServer } from '@/types/plex.tsx';
 
 interface Props {
   form: UseFormReturn<ConfigurationFormType>;
   server: PlexServer;
+  accountToken: PlexToken;
+  clientIdentifier: string;
 }
 
-export const DiscoveryUrlField: FC<Props> = ({ form, server }) => {
+export const DiscoveryUrlField: FC<Props> = ({
+  form,
+  server,
+  accountToken,
+  clientIdentifier,
+}) => {
   const { toast } = useToast();
 
   const [testInProgress, setTestInProgress] = useState(false);
@@ -37,7 +45,13 @@ export const DiscoveryUrlField: FC<Props> = ({ form, server }) => {
   const testUrl = async () => {
     setTestInProgress(true);
     try {
-      const alive = await isServerAliveRemote(discoveryUrl, server.accessToken);
+      const alive = await isServerAliveRemote(
+        discoveryUrl,
+        server.name,
+        server.accessToken,
+        accountToken ?? '',
+        clientIdentifier,
+      );
       const ipPort = parseUrlToIpPort(discoveryUrl);
       if (alive) {
         toast({
