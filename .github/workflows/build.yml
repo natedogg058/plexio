@@ -6,9 +6,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version tag to build (e.g. 0.2.0)"
+        description: "Version tag to build (e.g. 0.10.2)"
         required: true
-        default: "0.2.0"
+        default: "0.10.2"
 
 permissions:
   attestations: write
@@ -23,6 +23,17 @@ jobs:
     steps:
       - name: Check out the repo
         uses: actions/checkout@v7
+
+      - name: Validate release version
+        env:
+          RELEASE_VERSION: ${{ github.event.release.tag_name || inputs.version }}
+        run: |
+          package_version="$(python -c 'from plexio import __version__; print(__version__)')"
+          release_version="${RELEASE_VERSION#v}"
+          if [ "$package_version" != "$release_version" ]; then
+            echo "Release version $release_version does not match package version $package_version"
+            exit 1
+          fi
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4

@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.10.2
+
+- Aligned the backend and frontend package versions with the public release tag
+  so Stremio manifests and health responses report the installed release.
+- Added CI and release-build checks that reject version drift before an image is
+  published.
+- Clarified that HTTP 502/503/504 fallback retries authorized Direct Play
+  connections rather than switching to Plex transcoding, and documented that
+  ElfHosted operates a separately versioned deployment.
+
 ## v0.10.1
 
 - Moved Plex timeline heartbeats into an independent playback task so external
