@@ -10,7 +10,8 @@ Plexio is independent and is not affiliated with Plex or Stremio.
 
 - Configurable Direct Play and optional Plex transcoding streams.
 - Local, remote, shared-server, and Plex Relay connections.
-- Clearly labelled alternate-connection streams, with automatic proxy fallback.
+- Clearly labelled alternate-connection streams, with automatic proxy retries
+  between authorized Direct Play connections.
 - Continue Watching, Recently Added, searchable library, and sort catalogs.
 - Opt-in, individually selected Plex collection catalogs.
 - IMDb IDs when available, with Plex-native IDs for personal or unmatched media.
@@ -106,6 +107,21 @@ When playback reporting is also enabled, Plexio presents one Direct Play choice
 and automatically retries those authorized connections after connection errors
 or HTTP 502/503/504 responses. It does not bypass Plex account or remote-play
 permissions.
+
+This fallback remains Direct Play: it retries another authorized Plex connection
+and never converts a failed Direct Play request into a Plex transcode. If
+original-file playback returns HTTP 503 but Plex transcoding works, turn off
+“Include Direct Play” and enable “Include Transcoded Stream” for that
+installation.
+
+## Hosted instances
+
+This repository publishes the maintained self-hosted Plexio image. The public
+[ElfHosted Plexio](https://docs.elfhosted.com/app/plexio/) service is operated by
+ElfHosted using its own hardened fork and release schedule. Its manifest version
+can therefore differ from the releases in this repository, and publishing a
+release here does not update the ElfHosted instance. Contact ElfHosted support
+for its deployment status or self-host this image to choose a release directly.
 
 ## Shared servers and Plex Pass
 
