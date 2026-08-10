@@ -65,14 +65,14 @@ class StreamOptionTests(TestCase):
         self.assertEqual(URL(streams[0].url).host, 'primary.plex.direct')
         self.assertEqual(URL(streams[1].url).host, 'relay.plex.direct')
 
-    def test_playback_proxy_emits_one_automatic_fallback_stream(self):
+    def test_playback_proxy_emits_one_selected_connection_stream(self):
         streams = media().get_stremio_streams(
             configuration(),
             play_prefix='https://plexio.example.test/session/play',
         )
 
         self.assertEqual(len(streams), 1)
-        self.assertIn('Automatic connection fallback', streams[0].description)
+        self.assertIn('Selected Remote', streams[0].description)
 
     def test_moderate_compatible_version_precedes_large_remux(self):
         item = media()

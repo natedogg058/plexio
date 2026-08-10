@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.10.3
+
+- Pinned playback-reporting proxy requests to the explicitly selected Streaming
+  URL so Docker deployments do not fall through to unreachable Plex-provided
+  `.plex.direct` addresses.
+- Clarified that alternate Plex connections are client-facing Direct Play
+  choices and are not automatically selected by the server-side playback proxy.
+
 ## v0.10.2
 
 - Aligned the backend and frontend package versions with the public release tag

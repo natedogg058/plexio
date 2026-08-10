@@ -27,8 +27,7 @@ export const IncludeConnectionFallbacksField: FC<Props> = ({ form }) => {
             </FormLabel>
             <FormDescription>
               Offer the server&apos;s other local, remote, and Relay connections
-              as clearly labelled Direct Play choices. Playback reporting also
-              retries these connections automatically after gateway failures.
+              as clearly labelled Direct Play choices.
             </FormDescription>
           </div>
           <FormControl>

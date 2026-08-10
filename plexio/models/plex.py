@@ -494,11 +494,7 @@ class PlexMediaMeta(BaseModel):
                             f'{play_prefix}/{rk}/'
                             f'{self.duration or media.get("duration") or 0}/{pk}'
                         )
-                        connection_label = (
-                            'Automatic connection fallback'
-                            if len(connections) > 1
-                            else kind_label
-                        )
+                        connection_label = f'Selected {kind_label}'
                     else:
                         direct_play_url = str(
                             stream_base

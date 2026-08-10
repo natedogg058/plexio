@@ -65,16 +65,6 @@ class FakeClient:
         return self.stream_response
 
 
-class FallbackClient:
-    def __init__(self, responses):
-        self.responses = list(responses)
-        self.calls = []
-
-    def head(self, url, **kwargs):
-        self.calls.append(('HEAD', url, kwargs))
-        return self.responses.pop(0)
-
-
 class PlaybackPositionTests(TestCase):
     def test_position_uses_range_offset_and_elapsed_time(self):
         self.assertEqual(
@@ -102,9 +92,8 @@ class PlaybackPositionTests(TestCase):
 
 
 class PlaybackProxyTests(IsolatedAsyncioTestCase):
-    async def test_head_probe_retries_gateway_error_on_alternate_connection(self):
-        failed = FakeResponse(status=503)
-        succeeded = FakeResponse(
+    async def test_proxy_stays_on_configured_streaming_url(self):
+        upstream = FakeResponse(
             status=206,
             headers={
                 'Content-Length': '1000',
@@ -112,15 +101,15 @@ class PlaybackProxyTests(IsolatedAsyncioTestCase):
                 'Content-Type': 'video/x-matroska',
             },
         )
-        client = FallbackClient([failed, succeeded])
+        client = FakeClient(upstream)
         request = SimpleNamespace(method='HEAD', headers={})
         configuration = SimpleNamespace(
-            streaming_url=URL('https://primary.example.test'),
+            streaming_url=URL('http://192.168.50.194:32400'),
             direct_play_connections=[
-                (URL('https://primary.example.test'), None),
-                (URL('https://relay.example.test'), None),
+                (URL('http://192.168.50.194:32400'), None),
+                (URL('https://172-20-5-22.example.plex.direct:32400'), None),
             ],
-            discovery_url=URL('https://primary.example.test'),
+            discovery_url=URL('https://discovery.example.test'),
             access_token='secret',
         )
 
@@ -135,12 +124,8 @@ class PlaybackProxyTests(IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(response.status_code, 206)
-        self.assertTrue(failed.read_called)
-        self.assertTrue(failed.closed)
-        self.assertEqual(
-            [call[1].host for call in client.calls],
-            ['primary.example.test', 'relay.example.test'],
-        )
+        self.assertTrue(upstream.closed)
+        self.assertEqual([call[1].host for call in client.calls], ['192.168.50.194'])
 
     async def test_timeline_sends_query_and_releases_response(self):
         client = FakeClient(FakeResponse())
