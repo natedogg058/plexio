@@ -96,6 +96,7 @@ const ConfigurationForm: FC<Props> = ({
     const action = submitter instanceof HTMLButtonElement ? submitter.name : '';
     const includeConnectionFallbacks =
       configuration.includeDirectPlay &&
+      !configuration.reportPlayback &&
       configuration.includeConnectionFallbacks;
     const configuredSectionKeys = new Set(
       configuration.sections.map((section) => section.key),
@@ -214,7 +215,7 @@ const ConfigurationForm: FC<Props> = ({
           </>
         )}
         <IncludeDirectPlayField form={form} />
-        {form.watch('includeDirectPlay') && (
+        {form.watch('includeDirectPlay') && !form.watch('reportPlayback') && (
           <IncludeConnectionFallbacksField form={form} />
         )}
         <IncludeTranscodeOriginalField form={form} />

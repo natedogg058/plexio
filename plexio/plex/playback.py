@@ -154,41 +154,24 @@ def _position_ms(*, total, start, duration_ms, started_at, now):
 async def _open_playback_response(
     *,
     requester,
-    connections,
+    stream_base,
     part_key,
     access_token,
     headers,
 ):
-    for connection_index, (stream_base, _kind) in enumerate(connections):
-        upstream = stream_base / part_key[1:] % {'X-Plex-Token': access_token}
-        has_fallback = connection_index < len(connections) - 1
-        try:
-            response = await requester(
-                upstream,
-                headers=headers,
-                timeout=aiohttp.ClientTimeout(
-                    total=None,
-                    sock_connect=15,
-                    # Buffered external players can intentionally leave the
-                    # upstream response idle for minutes. The downstream
-                    # connection lifecycle remains the cancellation boundary.
-                    sock_read=None,
-                ),
-            )
-        except (aiohttp.ClientError, TimeoutError):
-            if has_fallback:
-                logger.warning('Plex playback connection failed; trying fallback')
-                continue
-            raise
-        if response.status not in {502, 503, 504} or not has_fallback:
-            return response
-        await response.read()
-        response.close()
-        logger.warning(
-            'Plex playback returned HTTP %s; trying fallback',
-            response.status,
-        )
-    raise RuntimeError('No Plex playback connection was available')
+    upstream = stream_base / part_key[1:] % {'X-Plex-Token': access_token}
+    return await requester(
+        upstream,
+        headers=headers,
+        timeout=aiohttp.ClientTimeout(
+            total=None,
+            sock_connect=15,
+            # Buffered external players can intentionally leave the upstream
+            # response idle for minutes. The downstream connection lifecycle
+            # remains the cancellation boundary.
+            sock_read=None,
+        ),
+    )
 
 
 async def proxy_playback(
@@ -208,12 +191,13 @@ async def proxy_playback(
 
     method = request.method.upper()
     requester = client.head if method == 'HEAD' else client.get
-    configured_connections = getattr(configuration, 'direct_play_connections', None)
-    if configured_connections is None:
-        configured_connections = [(configuration.streaming_url, None)]
     resp = await _open_playback_response(
         requester=requester,
-        connections=configured_connections,
+        # Plex-discovered alternates describe routes available to playback
+        # clients, not necessarily routes available from Plexio's container.
+        # The selected streaming URL is the only upstream explicitly chosen
+        # for server-side proxying, so never leave it for a .plex.direct route.
+        stream_base=configuration.streaming_url,
         part_key=part_key,
         access_token=configuration.access_token,
         headers=fwd,
