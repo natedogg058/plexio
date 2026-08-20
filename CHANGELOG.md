@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.10.4
+
+- Moved Plex library and collection discovery behind authorization-checked
+  Plexio endpoints so HTTPS configure pages can use HTTP tunnels without
+  browser mixed-content failures.
+- Kept Plex credentials in headers, refused upstream redirects, sanitized
+  configuration responses, and replaced indefinite loading with a clear error.
+
 ## v0.10.3
 
 - Pinned playback-reporting proxy requests to the explicitly selected Streaming

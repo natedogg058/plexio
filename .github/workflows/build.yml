@@ -6,9 +6,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version tag to build (e.g. 0.10.3)"
+        description: "Version tag to build (e.g. 0.10.4)"
         required: true
-        default: "0.10.3"
+        default: "0.10.4"
 
 permissions:
   attestations: write
