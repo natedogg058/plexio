@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.10.5
+
+- Added a 30-second timeout around active upstream media reads so a stalled
+  shared Plex server cannot leave external players hanging indefinitely.
+- Kept the transport-level read timeout disabled so intentionally buffered
+  players can remain idle without terminating a healthy playback response.
+
 ## v0.10.4
 
 - Moved Plex library and collection discovery behind authorization-checked
