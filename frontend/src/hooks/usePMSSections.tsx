@@ -1,26 +1,59 @@
 import { useEffect, useState } from 'react';
-import { PlexToken } from '@/hooks/usePlexToken.tsx';
-import { getSections } from '@/services/PMSService.tsx';
-import { PlexSection } from '@/types/plex.tsx';
+import { getSections } from '@/services/BackendService.tsx';
+import { PlexSection, PlexServer } from '@/types/plex.tsx';
 
-const usePMSSections = (serverUrl: string, plexToken: PlexToken) => {
+const usePMSSections = (
+  serverUrl: string,
+  server: PlexServer | undefined,
+  accountToken: string,
+  clientIdentifier: string,
+) => {
   const [sections, setSections] = useState<PlexSection[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
 
   useEffect(() => {
+    let active = true;
     setSections([]);
-    if (!plexToken || !serverUrl) {
-      return;
+    setError(false);
+    if (!server || !serverUrl || !accountToken || !clientIdentifier) {
+      setLoading(false);
+      return () => {
+        active = false;
+      };
     }
 
-    const fetchSections = async (): Promise<void> => {
-      const sectionsData = await getSections(serverUrl, plexToken);
-      setSections(sectionsData);
+    setLoading(true);
+    void getSections({
+      serverUrl,
+      serverName: server.name,
+      serverToken: server.accessToken,
+      accountToken,
+      clientIdentifier,
+    })
+      .then((items) => {
+        if (active) {
+          setSections(items);
+        }
+      })
+      .catch((requestError: unknown) => {
+        console.error('Error fetching Plex library sections:', requestError);
+        if (active) {
+          setError(true);
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      active = false;
     };
+  }, [accountToken, clientIdentifier, server, serverUrl]);
 
-    void fetchSections();
-  }, [serverUrl, plexToken]);
-
-  return sections;
+  return { sections, loading, error };
 };
 
 export default usePMSSections;

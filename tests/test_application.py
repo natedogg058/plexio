@@ -21,6 +21,8 @@ class ApplicationTests(TestCase):
                 '/api/v1/plex-pin',
                 '/api/v1/plex-token/{pin_id}',
                 '/api/v1/plex-resources',
+                '/api/v1/plex-sections',
+                '/api/v1/plex-collections',
             }.issubset(paths)
         )
 

@@ -1,5 +1,8 @@
+import asyncio
+import json
 from typing import Annotated
 
+import aiohttp
 from aiohttp import ClientSession
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 
@@ -17,6 +20,91 @@ from plexio.sessions import SessionCapacityError
 from plexio.settings import settings
 
 router = APIRouter(prefix='/api/v1')
+
+
+async def _authorized_server_url(
+    *,
+    http: ClientSession,
+    url: str,
+    server_name: str,
+    server_token: str,
+    account_token: str,
+    client_identifier: str,
+):
+    try:
+        candidate = validate_plex_url(url)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
+    resources = await fetch_plex_resources(
+        http,
+        account_token,
+        client_identifier,
+    )
+    if not is_authorized_connection(
+        resources,
+        server_name=server_name,
+        url=candidate,
+        server_token=server_token,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail='URL is not an authorized connection for this Plex server',
+        )
+    return candidate
+
+
+async def _get_server_json(
+    *,
+    http: ClientSession,
+    url,
+    server_token: str,
+):
+    """Fetch a small configuration response without exposing Plex to the browser."""
+    try:
+        async with http.get(
+            url,
+            headers={'X-Plex-Token': server_token},
+            timeout=settings.plex_requests_timeout,
+            allow_redirects=False,
+        ) as response:
+            if response.status in {401, 403}:
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail='Plex rejected the selected connection credentials',
+                )
+            if response.status >= 400:
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail=f'Plex server returned HTTP {response.status}',
+                )
+            try:
+                payload = await response.json(content_type=None)
+            except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail='Plex server returned an invalid response',
+                ) from exc
+    except HTTPException:
+        raise
+    except asyncio.TimeoutError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail='Plex server request timed out',
+        ) from exc
+    except aiohttp.ClientError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail='Unable to reach the selected Plex connection',
+        ) from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail='Plex server returned an invalid response',
+        )
+    return payload
 
 
 @router.get('/test-connection', dependencies=[Depends(limit_public_api)])
@@ -38,34 +126,117 @@ async def test_connection(
         max_length=255,
     ),
 ):
-    try:
-        candidate = validate_plex_url(url)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail=str(exc),
-        ) from exc
-    resources = await fetch_plex_resources(
-        http,
-        account_token,
-        client_identifier,
-    )
-    if not is_authorized_connection(
-        resources,
+    candidate = await _authorized_server_url(
+        http=http,
+        url=url,
         server_name=server_name,
-        url=candidate,
         server_token=token,
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail='URL is not an authorized connection for this Plex server',
-        )
+        account_token=account_token,
+        client_identifier=client_identifier,
+    )
     success = await check_server_connection(
         client=http,
         url=candidate,
         token=token,
     )
     return {'success': success}
+
+
+@router.get('/plex-sections', dependencies=[Depends(limit_public_api)])
+async def get_plex_sections(
+    http: Annotated[ClientSession, Depends(get_http_client)],
+    url: str = Query(..., min_length=8, max_length=2048),
+    server_name: str = Query(..., min_length=1, max_length=255),
+    token: str = Header(..., alias='X-Plex-Token', min_length=1, max_length=4096),
+    account_token: str = Header(
+        ...,
+        alias='X-Plex-Account-Token',
+        min_length=1,
+        max_length=4096,
+    ),
+    client_identifier: str = Header(
+        ...,
+        alias='X-Plex-Client-Identifier',
+        min_length=1,
+        max_length=255,
+    ),
+):
+    candidate = await _authorized_server_url(
+        http=http,
+        url=url,
+        server_name=server_name,
+        server_token=token,
+        account_token=account_token,
+        client_identifier=client_identifier,
+    )
+    payload = await _get_server_json(
+        http=http,
+        url=candidate / 'library/sections',
+        server_token=token,
+    )
+    container = payload.get('MediaContainer')
+    directories = container.get('Directory', []) if isinstance(container, dict) else []
+    sections = [
+        {
+            'key': str(item['key']),
+            'title': str(item['title']),
+            'type': item['type'],
+        }
+        for item in directories
+        if isinstance(item, dict)
+        and item.get('key')
+        and item.get('title')
+        and item.get('type') in {'movie', 'show'}
+    ]
+    return {'sections': sections}
+
+
+@router.get('/plex-collections', dependencies=[Depends(limit_public_api)])
+async def get_plex_collections(
+    http: Annotated[ClientSession, Depends(get_http_client)],
+    url: str = Query(..., min_length=8, max_length=2048),
+    server_name: str = Query(..., min_length=1, max_length=255),
+    section_key: str = Query(
+        ...,
+        min_length=1,
+        max_length=128,
+        pattern=r'^[A-Za-z0-9._-]+$',
+    ),
+    token: str = Header(..., alias='X-Plex-Token', min_length=1, max_length=4096),
+    account_token: str = Header(
+        ...,
+        alias='X-Plex-Account-Token',
+        min_length=1,
+        max_length=4096,
+    ),
+    client_identifier: str = Header(
+        ...,
+        alias='X-Plex-Client-Identifier',
+        min_length=1,
+        max_length=255,
+    ),
+):
+    candidate = await _authorized_server_url(
+        http=http,
+        url=url,
+        server_name=server_name,
+        server_token=token,
+        account_token=account_token,
+        client_identifier=client_identifier,
+    )
+    payload = await _get_server_json(
+        http=http,
+        url=candidate / 'library/sections' / section_key / 'collections',
+        server_token=token,
+    )
+    container = payload.get('MediaContainer')
+    metadata = container.get('Metadata', []) if isinstance(container, dict) else []
+    collections = [
+        {'ratingKey': str(item['ratingKey']), 'title': str(item['title'])}
+        for item in metadata
+        if isinstance(item, dict) and item.get('ratingKey') and item.get('title')
+    ]
+    return {'collections': collections}
 
 
 @router.get('/public-config')
