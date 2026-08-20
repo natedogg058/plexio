@@ -15,9 +15,16 @@ import { PlexSection } from '@/types/plex.tsx';
 interface Props {
   form: UseFormReturn<ConfigurationFormType>;
   sections: PlexSection[];
+  loading: boolean;
+  error: boolean;
 }
 
-export const SectionsField: FC<Props> = ({ form, sections }) => {
+export const SectionsField: FC<Props> = ({
+  form,
+  sections,
+  loading,
+  error,
+}) => {
   return (
     <FormField
       control={form.control}
@@ -30,7 +37,13 @@ export const SectionsField: FC<Props> = ({ form, sections }) => {
               Select the Plex library sections to access in Stremio.
             </FormDescription>
           </div>
-          {sections.length > 0 ? (
+          {error ? (
+            <FormDescription className="text-destructive">
+              Plexio could not retrieve libraries through the selected
+              Discovery URL. Test that URL, then try another authorized
+              connection or repair its tunnel.
+            </FormDescription>
+          ) : sections.length > 0 ? (
             sections.map((item) => (
               <FormField
                 key={item.key}
@@ -71,7 +84,7 @@ export const SectionsField: FC<Props> = ({ form, sections }) => {
                 }}
               />
             ))
-          ) : (
+          ) : loading ? (
             <div className="flex flex-col items-center justify-center">
               <div className="w-16 h-16 rounded-full animate-spin border-t-4 border-muted-foreground" />
               <span className="mt-4 text-lg text-muted-foreground text-center">
@@ -81,6 +94,10 @@ export const SectionsField: FC<Props> = ({ form, sections }) => {
                 If this takes too long, try selecting a different discovery URL.
               </span>
             </div>
+          ) : (
+            <FormDescription>
+              No movie or TV libraries were returned by this Plex server.
+            </FormDescription>
           )}
           <FormMessage />
         </FormItem>

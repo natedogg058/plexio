@@ -70,12 +70,18 @@ const ConfigurationForm: FC<Props> = ({
   const server = servers.find((candidate) => candidate.name === serverName);
 
   const discoveryUrl = form.watch('discoveryUrl');
-  const sections = usePMSSections(discoveryUrl, server?.accessToken ?? null);
+  const {
+    sections,
+    loading: sectionsLoading,
+    error: sectionsError,
+  } = usePMSSections(discoveryUrl, server, accountToken, clientIdentifier);
   const selectedSections = form.watch('sections');
   const includeCollections = form.watch('includeCollections');
   const { collections, loading: collectionsLoading } = usePMSCollections(
     discoveryUrl,
-    server?.accessToken ?? null,
+    server,
+    accountToken,
+    clientIdentifier,
     selectedSections,
     includeCollections,
   );
@@ -206,7 +212,12 @@ const ConfigurationForm: FC<Props> = ({
         )}
         {discoveryUrl && (
           <>
-            <SectionsField form={form} sections={sections}></SectionsField>
+            <SectionsField
+              form={form}
+              sections={sections}
+              loading={sectionsLoading}
+              error={sectionsError}
+            />
             <CollectionsField
               form={form}
               collections={collections}

@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { PlexCollection, PlexSection } from '@/types/plex.tsx';
 
 interface TestConnectionResponse {
   success: boolean;
@@ -12,6 +13,44 @@ interface PublicConfigResponse {
 interface SessionResponse {
   session_id?: string;
 }
+
+interface SectionsResponse {
+  sections?: PlexSection[];
+}
+
+interface CollectionResponse {
+  collections?: {
+    ratingKey: string;
+    title: string;
+  }[];
+}
+
+interface PlexConnectionRequest {
+  serverUrl: string;
+  serverName: string;
+  serverToken: string;
+  accountToken: string;
+  clientIdentifier: string;
+}
+
+const plexConnectionOptions = ({
+  serverUrl,
+  serverName,
+  serverToken,
+  accountToken,
+  clientIdentifier,
+}: PlexConnectionRequest) => ({
+  timeout: 25000,
+  params: {
+    url: serverUrl,
+    server_name: serverName,
+  },
+  headers: {
+    'X-Plex-Token': serverToken,
+    'X-Plex-Account-Token': accountToken,
+    'X-Plex-Client-Identifier': clientIdentifier,
+  },
+});
 
 export const isServerAliveRemote = async (
   serverUrl: string,
@@ -41,6 +80,51 @@ export const isServerAliveRemote = async (
     console.error('Error while ping PMS remote:', error);
     return false;
   }
+};
+
+export const getSections = async (
+  request: PlexConnectionRequest,
+): Promise<PlexSection[]> => {
+  const response = await axios.get<SectionsResponse>(
+    `${window.location.origin}/api/v1/plex-sections`,
+    plexConnectionOptions(request),
+  );
+  if (!Array.isArray(response.data.sections)) {
+    throw new Error('Plexio returned an invalid library response');
+  }
+  return response.data.sections;
+};
+
+export const getCollections = async (
+  request: PlexConnectionRequest,
+  sections: PlexSection[],
+): Promise<PlexCollection[]> => {
+  const responses = await Promise.all(
+    sections.map(async (section) => {
+      const options = plexConnectionOptions(request);
+      const response = await axios.get<CollectionResponse>(
+        `${window.location.origin}/api/v1/plex-collections`,
+        {
+          ...options,
+          params: {
+            ...options.params,
+            section_key: section.key,
+          },
+        },
+      );
+      return (response.data.collections ?? []).map((collection) => ({
+        ...collection,
+        sectionKey: section.key,
+        sectionTitle: section.title,
+        type: section.type,
+      }));
+    }),
+  );
+  return responses.flat().sort(
+    (a, b) =>
+      a.sectionTitle.localeCompare(b.sectionTitle) ||
+      a.title.localeCompare(b.title),
+  );
 };
 
 export const getPublicConfig = async (): Promise<{
