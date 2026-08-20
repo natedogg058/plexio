@@ -93,7 +93,10 @@ If you enable “Report playback to Plex”, Direct Play streams pass through
 Plexio. The public URL must then be reachable by every Stremio device and your
 proxy must permit byte-range requests and long-running responses. Plexio sends
 timeline heartbeats independently of media reads, so buffered external players
-remain active in Plex even while they temporarily stop requesting bytes.
+remain active in Plex even while they temporarily stop requesting bytes. When a
+player is actively waiting for data, Plexio ends an upstream response that
+delivers no media for 30 seconds so the player can reconnect instead of hanging
+indefinitely on a stalled shared server.
 
 ## Playback controls
 

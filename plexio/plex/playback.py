@@ -19,6 +19,7 @@ from fastapi.responses import Response, StreamingResponse
 PLEX_PRODUCT = 'Plexio'
 CHUNK = 1 << 16  # 64 KiB
 PING_INTERVAL = 10.0  # seconds between Plex timeline updates
+UPSTREAM_READ_TIMEOUT = 30.0  # seconds waiting for a requested media chunk
 
 logger = logging.getLogger(__name__)
 
@@ -166,12 +167,25 @@ async def _open_playback_response(
         timeout=aiohttp.ClientTimeout(
             total=None,
             sock_connect=15,
-            # Buffered external players can intentionally leave the upstream
-            # response idle for minutes. The downstream connection lifecycle
-            # remains the cancellation boundary.
+            # aiohttp's socket timer keeps running when Plexio is backpressured
+            # by a full downstream player buffer. Keep it disabled here and
+            # time only active media reads in the response iterator instead.
             sock_read=None,
         ),
     )
+
+
+async def _read_playback_chunk(resp):
+    """Read one requested upstream chunk without timing downstream idle time."""
+    try:
+        async with asyncio.timeout(UPSTREAM_READ_TIMEOUT):
+            return await resp.content.read(CHUNK)
+    except TimeoutError:
+        logger.warning(
+            'Plex playback upstream produced no media for %.0f seconds',
+            UPSTREAM_READ_TIMEOUT,
+        )
+        raise
 
 
 async def proxy_playback(
@@ -230,7 +244,7 @@ async def proxy_playback(
         heartbeat = None
         heartbeat_stopped = asyncio.Event()
         try:
-            async for chunk in resp.content.iter_chunked(CHUNK):
+            while chunk := await _read_playback_chunk(resp):
                 if started_at is None:
                     started_at = monotonic()
                     heartbeat = asyncio.create_task(
