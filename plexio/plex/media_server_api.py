@@ -10,7 +10,7 @@ from plexio.models.plex import (
     PlexMediaMeta,
     PlexMediaType,
 )
-from plexio.plex.utils import get_json
+from plexio.plex.utils import PlexUnauthorizedError, get_json
 from plexio.settings import settings
 from plexio.stream_cache import cached_model_list, resource_cache_key
 
@@ -296,26 +296,60 @@ async def get_all_episodes(
     return episodes
 
 
+def imdb_agent_guid(imdb_id: str) -> str:
+    return f'com.plexapp.agents.imdb://{imdb_id}?lang=en'
+
+
 async def imdb_to_plex_id(
     *,
     client: ClientSession,
     imdb_id: str,
     media_type: PlexMediaType,
     token: str,
-) -> str:
-    json = await get_json(
-        client=client,
-        url='https://metadata.provider.plex.tv/library/metadata/matches',
-        params={
-            'X-Plex-Token': settings.plex_matching_token or token,
-            'type': 1 if media_type is PlexMediaType.movie else 2,
-            'title': f'imdb-{imdb_id}',
-            'guid': f'com.plexapp.agents.imdb://{imdb_id}?lang=en',
-        },
-    )
+) -> str | None:
+    try:
+        json = await get_json(
+            client=client,
+            url='https://metadata.provider.plex.tv/library/metadata/matches',
+            params={
+                'X-Plex-Token': settings.plex_matching_token or token,
+                'type': 1 if media_type is PlexMediaType.movie else 2,
+                'title': f'imdb-{imdb_id}',
+                'guid': imdb_agent_guid(imdb_id),
+            },
+        )
+    except PlexUnauthorizedError:
+        # Shared-server tokens and some deployments cannot call Plex's cloud
+        # metadata matcher. Callers fall back to a direct library GUID lookup.
+        return None
     media_container = json['MediaContainer']
     if media_container['totalSize']:
         return media_container['Metadata'][0]['guid']
+    return None
+
+
+async def _resolve_imdb_guid_from_library(
+    *,
+    client: ClientSession,
+    url: URL,
+    token: str,
+    imdb_id: str,
+    cache=None,
+    cache_namespace: str | None = None,
+) -> str | None:
+    candidate = imdb_agent_guid(imdb_id)
+    media = await get_media(
+        client=client,
+        url=url,
+        token=token,
+        guid=candidate,
+        get_only_first=True,
+        cache=cache,
+        cache_namespace=cache_namespace,
+    )
+    if media:
+        return candidate
+    return None
 
 
 async def get_episode_guid(
@@ -371,6 +405,15 @@ async def stremio_to_plex_id(
         media_type=media_type,
         token=token,
     )
+    if not plex_id:
+        plex_id = await _resolve_imdb_guid_from_library(
+            client=client,
+            url=url,
+            token=token,
+            imdb_id=imdb_id,
+            cache=cache,
+            cache_namespace=namespace,
+        )
     if not plex_id:
         return None
 

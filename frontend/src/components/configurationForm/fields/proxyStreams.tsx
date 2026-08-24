@@ -14,22 +14,23 @@ interface Props {
   form: UseFormReturn<ConfigurationFormType>;
 }
 
-export const ReportPlaybackField: FC<Props> = ({ form }) => {
+export const ProxyStreamsField: FC<Props> = ({ form }) => {
   return (
     <FormField
       control={form.control}
-      name="reportPlayback"
+      name="proxyStreams"
       render={({ field }) => (
-        <FormItem className="items-center justify-between flex flex-row rounded-lg border p-2">
+        <FormItem className="items-center justify-between flex flex-row rounded-lg border p-2 ml-4">
           <div className="space-y-0.5">
-            <FormLabel className="text-base">Report playback to Plex</FormLabel>
+            <FormLabel className="text-base">
+              Route streams through Plexio
+            </FormLabel>
             <FormDescription>
-              Sync watch progress to Plex. When route-through-Plexio is off,
-              Direct Play URLs go straight to your Plex server and Plex tracks
-              playback natively. When route-through is on, Plexio proxies the
-              stream so progress stays accurate while players buffer. Set
-              BASE_URL when using a reverse proxy that does not preserve
-              forwarded headers.
+              Off sends Direct Play URLs straight to your Plex server so Plexio
+              does not carry video bandwidth. Watch progress then relies on
+              Plex&apos;s native playback tracking from the client. On keeps
+              Plexio&apos;s playback proxy for reliable progress sync while
+              external players pause reads after buffering.
             </FormDescription>
           </div>
           <FormControl>

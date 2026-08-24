@@ -9,3 +9,4 @@ export { IncludeTranscodeOriginalField } from './includeTranscodeOriginal.tsx';
 export { IncludeTranscodeDownFields } from './includeTranscodeDown.tsx';
 export { IncludePlexTvField } from './includePlexTv.tsx';
 export { ReportPlaybackField } from './reportPlayback.tsx';
+export { ProxyStreamsField } from './proxyStreams.tsx';

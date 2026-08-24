@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.10.6
+
+- Fall back to direct Plex library GUID lookup when Plex's cloud IMDb matcher
+  rejects a shared-server token, fixing stream failures that surfaced as
+  `PlexUnauthorizedError` during IMDb-based matching.
+- Added a **Route streams through Plexio** configure option so playback
+  reporting can use direct Plex URLs without carrying video bandwidth through
+  Plexio, plus a `DISABLE_STREAM_PROXY` operator setting to enforce that
+  globally on bandwidth-limited hosts.
+
 ## v0.10.5
 
 - Added a 30-second timeout around active upstream media reads so a stalled

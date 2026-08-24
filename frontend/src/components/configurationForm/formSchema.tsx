@@ -30,6 +30,7 @@ export const formSchema = z.object({
   transcodeDownQualities: z.array(z.string()).optional(),
   includePlexTv: z.boolean(),
   reportPlayback: z.boolean(),
+  proxyStreams: z.boolean(),
 });
 
 export type ConfigurationFormType = z.infer<typeof formSchema>;

@@ -8,7 +8,7 @@ from sentry_sdk import configure_scope
 from plexio.settings import settings
 
 
-class PlexUnauthorizedError(BaseException):
+class PlexUnauthorizedError(Exception):
     pass
 
 

@@ -14,6 +14,7 @@ import {
   IncludeTranscodeDownFields,
   IncludePlexTvField,
   ReportPlaybackField,
+  ProxyStreamsField,
   CollectionsField,
 } from '@/components/configurationForm/fields';
 import {
@@ -60,6 +61,7 @@ const ConfigurationForm: FC<Props> = ({
       includeTranscodeDown: false,
       includePlexTv: false,
       reportPlayback: false,
+      proxyStreams: true,
       sections: [],
       includeCollections: false,
       collections: [],
@@ -102,7 +104,7 @@ const ConfigurationForm: FC<Props> = ({
     const action = submitter instanceof HTMLButtonElement ? submitter.name : '';
     const includeConnectionFallbacks =
       configuration.includeDirectPlay &&
-      !configuration.reportPlayback &&
+      !(configuration.reportPlayback && configuration.proxyStreams) &&
       configuration.includeConnectionFallbacks;
     const configuredSectionKeys = new Set(
       configuration.sections.map((section) => section.key),
@@ -226,13 +228,17 @@ const ConfigurationForm: FC<Props> = ({
           </>
         )}
         <IncludeDirectPlayField form={form} />
-        {form.watch('includeDirectPlay') && !form.watch('reportPlayback') && (
+        {form.watch('includeDirectPlay') &&
+          !(form.watch('reportPlayback') && form.watch('proxyStreams')) && (
           <IncludeConnectionFallbacksField form={form} />
         )}
         <IncludeTranscodeOriginalField form={form} />
         <IncludeTranscodeDownFields form={form} />
         <IncludePlexTvField form={form} />
         <ReportPlaybackField form={form} />
+        {form.watch('reportPlayback') && (
+          <ProxyStreamsField form={form} />
+        )}
 
         <div className="flex items-center space-x-1 justify-center p-3">
           <Button className="h-11 w-10 p-2" type="submit" name="clipboard">

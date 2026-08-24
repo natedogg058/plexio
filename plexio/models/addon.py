@@ -96,6 +96,7 @@ class AddonConfiguration(BaseModel):
     transcode_down_qualities: list[Resolution] = Field(default_factory=list)
     include_plex_tv: bool = False
     report_playback: bool = False
+    proxy_streams: bool = True
 
     @field_validator('discovery_url', 'streaming_url', mode='before')
     @classmethod

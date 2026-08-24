@@ -107,6 +107,14 @@ def _public_base_url(request: Request) -> str:
     return str(public_url).rstrip('/')
 
 
+def _uses_playback_proxy(configuration: AddonConfiguration) -> bool:
+    return (
+        configuration.report_playback
+        and configuration.proxy_streams
+        and not settings.disable_stream_proxy
+    )
+
+
 def _sections_of_type(configuration, stremio_type):
     return [
         s
@@ -554,7 +562,7 @@ async def get_stream(
     started = perf_counter()
     namespace = configuration_cache_namespace(configuration)
     config_path = ''
-    if configuration.report_playback:
+    if _uses_playback_proxy(configuration):
         config_path = request.url.path.split('/stream/')[0]
     stream_key = resource_cache_key(
         namespace,
@@ -600,7 +608,7 @@ async def get_stream(
 
     build_started = perf_counter()
     play_prefix = None
-    if configuration.report_playback:
+    if _uses_playback_proxy(configuration):
         base = _public_base_url(request)
         play_prefix = f'{base}{config_path}/play'
     result = StremioStreamsResponse(
@@ -651,7 +659,7 @@ async def get_play(
     session_id: str | None = None,
     installation_id: str | None = None,
 ):
-    if configuration is None or not configuration.report_playback:
+    if configuration is None or not _uses_playback_proxy(configuration):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     return await proxy_playback(
         request,

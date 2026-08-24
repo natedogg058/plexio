@@ -39,6 +39,9 @@ class Settings(BaseSettings):
     # Comma-separated host names accepted by the ASGI Host middleware. Unset
     # preserves self-hosted setups that use changing local/tunnel host names.
     allowed_hosts: str | None = None
+    # When true, never route media through Plexio's playback proxy even if an
+    # install enables playback reporting. Useful for bandwidth-limited hosts.
+    disable_stream_proxy: bool = False
     max_request_body_size: int = Field(default=65_536, ge=1024, le=1_048_576)
     public_api_rate_limit: int = Field(default=60, ge=1, le=10_000)
 

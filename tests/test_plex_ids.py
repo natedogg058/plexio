@@ -6,7 +6,7 @@ from fastapi import HTTPException, Response
 from yarl import URL
 
 from plexio.cache import MemoryCache
-from plexio.models.plex import PlexEpisodeMeta, PlexMediaMeta
+from plexio.models.plex import PlexEpisodeMeta, PlexMediaMeta, PlexMediaType
 from plexio.models.stremio import StremioMediaType
 from plexio.models.utils import (
     guid_to_plexio_id,
@@ -15,6 +15,8 @@ from plexio.models.utils import (
     plexio_id_to_rating_key,
     rating_key_to_plexio_id,
 )
+from plexio.plex.media_server_api import stremio_to_plex_id
+from plexio.plex.utils import PlexUnauthorizedError
 from plexio.routers.addon import _public_base_url, get_meta, get_stream
 from plexio.settings import settings
 
@@ -265,6 +267,7 @@ class PlexIdRouteTests(IsolatedAsyncioTestCase):
                 if key != 'report_playback'
             },
             report_playback=True,
+            proxy_streams=True,
         )
         request = SimpleNamespace(
             headers={
@@ -291,3 +294,92 @@ class PlexIdRouteTests(IsolatedAsyncioTestCase):
                 'https://plexio.example.test/session-id/play/123/120000/'
             )
         )
+
+    @patch('plexio.routers.addon.get_media_by_rating_key', new_callable=AsyncMock)
+    async def test_report_playback_without_proxy_uses_direct_plex_urls(
+        self,
+        get_by_rating_key,
+    ):
+        get_by_rating_key.return_value = [streamable_media('123', duration=120_000)]
+        configuration = SimpleNamespace(
+            **{
+                key: value
+                for key, value in vars(STREAM_CONFIGURATION).items()
+                if key not in {'report_playback', 'proxy_streams'}
+            },
+            report_playback=True,
+            proxy_streams=False,
+        )
+        request = SimpleNamespace(
+            headers={},
+            url=URL('http://internal.test/session-id/stream/movie/plexio:rk-123.json'),
+        )
+
+        response = await get_stream(
+            request=request,
+            response=Response(),
+            http=object(),
+            cache=MemoryCache(),
+            configuration=configuration,
+            stremio_type=StremioMediaType.movie,
+            media_id='plexio:rk-123',
+        )
+
+        self.assertEqual(len(response.streams), 1)
+        self.assertIn('/library/parts/1/file.mkv', response.streams[0].url)
+        self.assertNotIn('/play/', response.streams[0].url)
+
+
+class ImdbMatchingTests(IsolatedAsyncioTestCase):
+    @patch('plexio.plex.media_server_api.get_media', new_callable=AsyncMock)
+    @patch('plexio.plex.media_server_api.imdb_to_plex_id', new_callable=AsyncMock)
+    async def test_stremio_to_plex_id_falls_back_to_library_guid(
+        self,
+        imdb_to_plex_id,
+        get_media,
+    ):
+        imdb_to_plex_id.return_value = None
+        get_media.return_value = [
+            PlexMediaMeta(
+                guid='com.plexapp.agents.imdb://tt1234567?lang=en',
+                type='movie',
+                title='Matched movie',
+                ratingKey='123',
+            )
+        ]
+        cache = MemoryCache()
+
+        plex_id = await stremio_to_plex_id(
+            client=object(),
+            url=CONFIGURATION.discovery_url,
+            token='secret',
+            cache=cache,
+            stremio_id='tt1234567',
+            media_type=PlexMediaType.movie,
+        )
+
+        self.assertEqual(plex_id, 'com.plexapp.agents.imdb://tt1234567?lang=en')
+        get_media.assert_awaited_once()
+        kwargs = get_media.await_args.kwargs
+        self.assertEqual(
+            kwargs['guid'],
+            'com.plexapp.agents.imdb://tt1234567?lang=en',
+        )
+
+    @patch('plexio.plex.media_server_api.get_json', new_callable=AsyncMock)
+    async def test_imdb_to_plex_id_treats_unauthorized_as_missing_match(
+        self,
+        get_json,
+    ):
+        get_json.side_effect = PlexUnauthorizedError()
+
+        from plexio.plex.media_server_api import imdb_to_plex_id
+
+        result = await imdb_to_plex_id(
+            client=object(),
+            imdb_id='tt1234567',
+            media_type=PlexMediaType.movie,
+            token='shared-server-token',
+        )
+
+        self.assertIsNone(result)
