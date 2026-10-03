@@ -1,7 +1,7 @@
 import { FC, useState } from 'react';
 import { UseFormReturn } from 'react-hook-form';
 import { ConfigurationFormType } from '@/components/configurationForm/formSchema.tsx';
-import { parseUrlToIpPort } from '@/components/configurationForm/utils.tsx';
+import { formatConnectionAddress } from '@/components/configurationForm/utils.tsx';
 import { Badge } from '@/components/ui/badge.tsx';
 import { Button } from '@/components/ui/button.tsx';
 import {
@@ -19,8 +19,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select.tsx';
-import { useToast } from '@/hooks/useToast';
 import { PlexToken } from '@/hooks/usePlexToken.tsx';
+import { useToast } from '@/hooks/useToast';
 import { isServerAliveRemote } from '@/services/BackendService.tsx';
 import { PlexServer } from '@/types/plex.tsx';
 
@@ -52,24 +52,32 @@ export const DiscoveryUrlField: FC<Props> = ({
         accountToken ?? '',
         clientIdentifier,
       );
-      const ipPort = parseUrlToIpPort(discoveryUrl);
+      const address = formatConnectionAddress(discoveryUrl);
       if (alive) {
         toast({
           title: 'Discovery URL Test Successful!',
-          description: `Plexio backend successfully accessed your server at ${ipPort}.`,
+          description: `Plexio backend successfully accessed your server at ${address}.`,
           variant: 'success',
           duration: 30 * 1000,
         });
       } else {
         toast({
           title: 'Discovery URL Test Failed!',
-          description: `Plexio backend could not access your server at ${ipPort}. 
-                        Please try again or select another URL. Ensure your server is accessible publicly, 
+          description: `Plexio backend could not access your server at ${address}.
+                        Please try again or select another URL. Ensure your server is accessible publicly,
                         or consider using Plex Relay if the server is behind a firewall.`,
           variant: 'destructive',
           duration: 30 * 1000,
         });
       }
+    } catch {
+      toast({
+        title: 'Discovery URL Test Failed!',
+        description:
+          'Could not test the selected address. Please select another URL or retry.',
+        variant: 'destructive',
+        duration: 30 * 1000,
+      });
     } finally {
       setTestInProgress(false);
     }

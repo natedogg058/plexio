@@ -44,6 +44,7 @@ const ConfigurationForm: FC<Props> = ({
   const [baseUrl, setBaseUrl] = useState<string | null>(null);
   const [legacyUrlsEnabled, setLegacyUrlsEnabled] = useState(false);
   const submitting = useRef(false);
+  const configurationRevision = useRef(0);
   const [busy, setBusy] = useState(false);
   const [manifestUrl, setManifestUrl] = useState('');
   const [copyStatus, setCopyStatus] = useState('');
@@ -76,6 +77,7 @@ const ConfigurationForm: FC<Props> = ({
 
   useEffect(() => {
     const subscription = form.watch(() => {
+      configurationRevision.current += 1;
       setManifestUrl('');
       setCopyStatus('');
     });
@@ -196,6 +198,12 @@ const ConfigurationForm: FC<Props> = ({
     event.preventDefault();
     if (submitting.current) return;
     submitting.current = true;
+    const submittedRevision = configurationRevision.current;
+    const checkConfiguration = () => {
+      if (configurationRevision.current !== submittedRevision) {
+        throw new Error('Settings changed. Generate a new manifest URL.');
+      }
+    };
     setBusy(true);
     setManifestUrl('');
     setCopyStatus('');
@@ -209,7 +217,13 @@ const ConfigurationForm: FC<Props> = ({
       void form
         .handleSubmit(
           (configuration) => {
-            void createManifestUrl(configuration).then(resolve, reject);
+            void createManifestUrl(configuration)
+              .then((addonUrl) => {
+                // Reject before the clipboard promise receives a stale URL.
+                checkConfiguration();
+                resolve(addonUrl);
+              })
+              .catch(reject);
           },
           () => reject(validationError),
         )(event)
@@ -221,13 +235,16 @@ const ConfigurationForm: FC<Props> = ({
     try {
       const addonUrl = await url;
       if (copying) {
+        const wasCopied = await copied;
+        checkConfiguration();
         setManifestUrl(addonUrl);
         setCopyStatus(
-          (await copied)
+          wasCopied
             ? 'Manifest URL copied.'
             : 'Your manifest URL is ready. Click Copy URL or select it to copy manually.',
         );
       } else {
+        checkConfiguration();
         window.location.href = addonUrl.replace(/https?:\/\//, 'stremio://');
       }
     } catch (error) {

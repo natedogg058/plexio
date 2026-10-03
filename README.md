@@ -170,6 +170,8 @@ cd frontend
 npm ci
 npm run lint
 npm run build
+npx playwright install --with-deps chromium webkit
+npm run test:e2e
 ```
 
 For the live development stack, copy `.env.example` to `.env` and run:

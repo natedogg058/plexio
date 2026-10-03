@@ -1,13 +1,14 @@
 {
   "name": "frontend",
   "private": true,
-  "version": "0.10.6",
+  "version": "0.10.7",
   "type": "module",
   "scripts": {
     "dev": "vite --host",
     "build": "tsc && vite build",
     "lint": "eslint . --report-unused-disable-directives --max-warnings 0",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.3.4",
@@ -37,6 +38,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/vite": "^4.3.3",
     "@trivago/prettier-plugin-sort-imports": "^4.3.0",
     "@types/node": "^20.12.5",

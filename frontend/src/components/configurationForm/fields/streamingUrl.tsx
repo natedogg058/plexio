@@ -1,7 +1,7 @@
 import { FC, useState } from 'react';
 import { UseFormReturn } from 'react-hook-form';
 import { ConfigurationFormType } from '@/components/configurationForm/formSchema.tsx';
-import { parseUrlToIpPort } from '@/components/configurationForm/utils.tsx';
+import { formatConnectionAddress } from '@/components/configurationForm/utils.tsx';
 import { Badge } from '@/components/ui/badge.tsx';
 import { Button } from '@/components/ui/button.tsx';
 import {
@@ -38,11 +38,11 @@ export const StreamingUrlField: FC<Props> = ({ form, server }) => {
     setTestInProgress(true);
     try {
       const alive = await isServerAliveLocal(streamingUrl, server.accessToken);
-      const ipPort = parseUrlToIpPort(streamingUrl);
+      const address = formatConnectionAddress(streamingUrl);
       if (alive) {
         toast({
           title: 'Streaming URL Test Successful!',
-          description: `Your device successfully accessed the Streaming URL at ${ipPort}.
+          description: `Your device successfully accessed the Streaming URL at ${address}.
                         Streaming will work if accessed from this device.`,
           variant: 'success',
           duration: 30 * 1000,
@@ -50,14 +50,22 @@ export const StreamingUrlField: FC<Props> = ({ form, server }) => {
       } else {
         toast({
           title: 'Streaming URL Test Failed!',
-          description: `Your device could not access the Streaming URL at ${ipPort}. 
-                        If you plan to stream from a different device, this may be expected behavior. 
-                        Otherwise, please try again or select another URL. 
+          description: `Your device could not access the Streaming URL at ${address}.
+                        If you plan to stream from a different device, this may be expected behavior.
+                        Otherwise, please try again or select another URL.
                         If your server is behind a firewall, consider using Plex Relay.`,
           variant: 'destructive',
           duration: 30 * 1000,
         });
       }
+    } catch {
+      toast({
+        title: 'Streaming URL Test Failed!',
+        description:
+          'Could not test the selected address. Please select another URL or retry.',
+        variant: 'destructive',
+        duration: 30 * 1000,
+      });
     } finally {
       setTestInProgress(false);
     }

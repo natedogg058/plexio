@@ -1,13 +1,25 @@
 import js from '@eslint/js';
-import { defineConfig } from 'eslint/config';
 import prettier from 'eslint-config-prettier';
 import react from 'eslint-plugin-react';
 import reactHooks from 'eslint-plugin-react-hooks';
+import { defineConfig } from 'eslint/config';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
 export default defineConfig([
-  { ignores: ['dist/**', 'node_modules/**'] },
+  {
+    ignores: [
+      'dist/**',
+      'node_modules/**',
+      'test-results/**',
+      'playwright-report/**',
+    ],
+  },
+  {
+    files: ['tests/**/*.mjs', 'playwright.config.mjs'],
+    extends: [js.configs.recommended],
+    languageOptions: { globals: { ...globals.browser, ...globals.node } },
+  },
   {
     files: ['**/*.{ts,tsx}'],
     extends: [

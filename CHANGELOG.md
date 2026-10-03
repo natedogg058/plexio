@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.10.7
+
+- Fixed manifest copying in Safari and Chrome by reserving clipboard access
+  during the original click. Added success feedback, a selectable manifest URL,
+  direct-click retry and a fallback for self-hosted HTTP pages.
+- Discard pending install/copy results when configuration changes, so a delayed
+  response cannot silently install or copy the previous settings.
+- Fixed connection-test feedback for ordinary IPv4 addresses, IPv6 literals and
+  custom domains, preserving readable Plex TLS addresses and surfacing errors.
+- Added Chromium and WebKit regression tests to CI for connection checks,
+  delayed copying, settings changes, clipboard fallbacks and failure recovery.
+- Updated vulnerable runtime and frontend dependencies, migrated to Tailwind 4
+  and ESLint 9, and retained the configure page's themes and responsive layout.
+  The UI requires Safari 16.4+, Chrome 111+ or Firefox 128+.
+
 ## v0.10.6
 
 - Fall back to direct Plex library GUID lookup when Plex's cloud IMDb matcher

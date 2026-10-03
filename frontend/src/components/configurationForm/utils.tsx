@@ -1,15 +1,10 @@
-export const parseUrlToIpPort = (url: string): string => {
-  const urlObj = new URL(url);
-
-  const hostname = urlObj.hostname;
-  const port = urlObj.port;
-
-  const ipMatch = /^(\d+-\d+-\d+-\d+)/.exec(hostname);
-  if (!ipMatch) {
-    throw new Error('Invalid hostname format.');
-  }
-
-  const ip = ipMatch[1].replace(/-/g, '.');
-
-  return `${ip}:${port}`;
+export const formatConnectionAddress = (url: string): string => {
+  const { hostname, port } = new URL(url);
+  // Plex encodes an IPv4 address in its TLS hostname. Other connections may
+  // use ordinary DNS names, IPv4 literals or bracketed IPv6 addresses.
+  const plexIp = /^(\d{1,3}-\d{1,3}-\d{1,3}-\d{1,3})\..+\.plex\.direct$/i.exec(
+    hostname,
+  );
+  const address = plexIp ? plexIp[1].replace(/-/g, '.') : hostname;
+  return port ? `${address}:${port}` : address;
 };

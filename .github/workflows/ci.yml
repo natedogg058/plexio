@@ -66,6 +66,22 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Install test browsers
+        run: npx playwright install --with-deps chromium webkit
+
+      - name: Browser regression tests
+        run: npm run test:e2e
+
+      - name: Upload browser test report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-test-report
+          path: |
+            frontend/playwright-report/
+            frontend/test-results/
+          retention-days: 7
+
   container:
     name: Container
     runs-on: ubuntu-latest
