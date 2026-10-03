@@ -318,8 +318,15 @@ const ConfigurationForm: FC<Props> = ({
               className="w-full rounded-md border bg-background p-2 text-sm"
               readOnly
               value={manifestUrl}
-              onFocus={(event) => event.currentTarget.select()}
-              onClick={(event) => event.currentTarget.select()}
+              onFocus={(event) => {
+                event.currentTarget.select();
+                event.currentTarget.setSelectionRange(0, manifestUrl.length);
+              }}
+              onClick={(event) => {
+                event.currentTarget.select();
+                event.currentTarget.setSelectionRange(0, manifestUrl.length);
+              }}
+              onMouseUp={(event) => event.preventDefault()}
             />
             <Button
               type="button"
