@@ -24,12 +24,14 @@ export const ReportPlaybackField: FC<Props> = ({ form }) => {
           <div className="flex flex-col gap-0.5">
             <FormLabel className="text-base">Report playback to Plex</FormLabel>
             <FormDescription>
-              Sync watch progress to Plex. When route-through-Plexio is off,
-              Direct Play URLs go straight to your Plex server and Plex tracks
-              playback natively. When route-through is on, Plexio proxies the
-              stream so progress stays accurate while players buffer. Set
-              BASE_URL when using a reverse proxy that does not preserve
-              forwarded headers.
+              Sync watch progress to Plex. With route-through-Plexio off,
+              Plexio sends only the heartbeats and the video goes straight to
+              your server. With it on, Plexio also fetches the stream so
+              progress stays accurate while players buffer. Plex drops a
+              session it never sees as playing, so leaving this off can end a
+              stream early on servers that limit how long a session may sit
+              paused. Set BASE_URL when using a reverse proxy that does not
+              preserve forwarded headers.
             </FormDescription>
           </div>
           <FormControl>

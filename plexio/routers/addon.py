@@ -41,7 +41,7 @@ from plexio.plex.media_server_api import (
     get_section_media,
     stremio_to_plex_id,
 )
-from plexio.plex.playback import b64decode_path, proxy_playback
+from plexio.plex.playback import b64decode_path, proxy_playback, start_keepalive
 from plexio.settings import settings
 from plexio.stream_cache import (
     cache_get,
@@ -111,6 +111,20 @@ def _uses_playback_proxy(configuration: AddonConfiguration) -> bool:
     return (
         configuration.report_playback
         and configuration.proxy_streams
+        and not settings.disable_stream_proxy
+    )
+
+
+def _uses_playback_keepalive(configuration: AddonConfiguration) -> bool:
+    """Report playback to Plex without moving any media through Plexio.
+
+    Plex reaps a session it never sees as playing, so a plain Direct Play URL
+    gets dropped part-way through on servers that limit paused sessions. This
+    mode keeps the timeline going while the player talks to Plex directly.
+    """
+    return (
+        configuration.report_playback
+        and not configuration.proxy_streams
         and not settings.disable_stream_proxy
     )
 
@@ -562,7 +576,9 @@ async def get_stream(
     started = perf_counter()
     namespace = configuration_cache_namespace(configuration)
     config_path = ''
-    if _uses_playback_proxy(configuration):
+    if _uses_playback_proxy(configuration) or _uses_playback_keepalive(
+        configuration
+    ):
         config_path = request.url.path.split('/stream/')[0]
     stream_key = resource_cache_key(
         namespace,
@@ -608,9 +624,12 @@ async def get_stream(
 
     build_started = perf_counter()
     play_prefix = None
-    if _uses_playback_proxy(configuration):
+    if _uses_playback_proxy(configuration) or _uses_playback_keepalive(
+        configuration
+    ):
         base = _public_base_url(request)
-        play_prefix = f'{base}{config_path}/play'
+        route = 'play' if _uses_playback_proxy(configuration) else 'keepalive'
+        play_prefix = f'{base}{config_path}/{route}'
     result = StremioStreamsResponse(
         streams=chain.from_iterable(
             meta.get_stremio_streams(configuration, play_prefix) for meta in media
@@ -663,6 +682,33 @@ async def get_play(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     return await proxy_playback(
         request,
+        client=http,
+        configuration=configuration,
+        rating_key=rating_key,
+        duration_ms=duration,
+        part_key=b64decode_path(part_b64),
+        identifier=session_id or installation_id or 'plexio',
+    )
+
+
+@router.get(
+    '/{session_id}/keepalive/{rating_key}/{duration}/{part_b64}',
+)
+@router.get(
+    '/{installation_id}/{base64_cfg}/keepalive/{rating_key}/{duration}/{part_b64}',
+)
+async def get_keepalive(
+    http: Annotated[ClientSession, Depends(get_http_client)],
+    configuration: Annotated[AddonConfiguration, Depends(get_addon_configuration)],
+    rating_key: str,
+    duration: int,
+    part_b64: str,
+    session_id: str | None = None,
+    installation_id: str | None = None,
+):
+    if configuration is None or not _uses_playback_keepalive(configuration):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    return start_keepalive(
         client=http,
         configuration=configuration,
         rating_key=rating_key,

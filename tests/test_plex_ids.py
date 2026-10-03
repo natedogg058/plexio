@@ -296,7 +296,7 @@ class PlexIdRouteTests(IsolatedAsyncioTestCase):
         )
 
     @patch('plexio.routers.addon.get_media_by_rating_key', new_callable=AsyncMock)
-    async def test_report_playback_without_proxy_uses_direct_plex_urls(
+    async def test_report_playback_without_proxy_uses_keepalive_route(
         self,
         get_by_rating_key,
     ):
@@ -326,7 +326,11 @@ class PlexIdRouteTests(IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(len(response.streams), 1)
-        self.assertIn('/library/parts/1/file.mkv', response.streams[0].url)
+        self.assertTrue(
+            response.streams[0].url.startswith(
+                'http://internal.test/session-id/keepalive/123/120000/'
+            )
+        )
         self.assertNotIn('/play/', response.streams[0].url)
 
 

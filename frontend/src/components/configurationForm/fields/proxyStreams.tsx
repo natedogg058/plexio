@@ -26,11 +26,11 @@ export const ProxyStreamsField: FC<Props> = ({ form }) => {
               Route streams through Plexio
             </FormLabel>
             <FormDescription>
-              Off sends Direct Play URLs straight to your Plex server so Plexio
-              does not carry video bandwidth. Watch progress then relies on
-              Plex&apos;s native playback tracking from the client. On keeps
-              Plexio&apos;s playback proxy for reliable progress sync while
-              external players pause reads after buffering.
+              Off keeps Direct Play URLs on your Plex server so Plexio
+              carries no video bandwidth, and only the watch-progress
+              heartbeats run through Plexio. On fetches the stream through
+              Plexio for progress that stays accurate across long buffering
+              pauses.
             </FormDescription>
           </div>
           <FormControl>
