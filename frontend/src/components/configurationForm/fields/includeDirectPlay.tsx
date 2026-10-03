@@ -21,7 +21,7 @@ export const IncludeDirectPlayField: FC<Props> = ({ form }) => {
       name="includeDirectPlay"
       render={({ field }) => (
         <FormItem className="items-center justify-between flex flex-row rounded-lg border p-2">
-          <div className="space-y-0.5">
+          <div className="flex flex-col gap-0.5">
             <FormLabel className="text-base">Include Direct Play</FormLabel>
             <FormDescription>
               Offer original-file streams. Turn this off when a shared server

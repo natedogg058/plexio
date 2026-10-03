@@ -21,7 +21,7 @@ export const ProxyStreamsField: FC<Props> = ({ form }) => {
       name="proxyStreams"
       render={({ field }) => (
         <FormItem className="items-center justify-between flex flex-row rounded-lg border p-2 ml-4">
-          <div className="space-y-0.5">
+          <div className="flex flex-col gap-0.5">
             <FormLabel className="text-base">
               Route streams through Plexio
             </FormLabel>

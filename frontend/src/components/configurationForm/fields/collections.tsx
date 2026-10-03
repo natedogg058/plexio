@@ -33,7 +33,7 @@ export const CollectionsField: FC<Props> = ({
         name="includeCollections"
         render={({ field }) => (
           <div className="items-center justify-between flex flex-row">
-            <div className="space-y-0.5">
+            <div className="flex flex-col gap-0.5">
               <FormLabel className="text-base">
                 Include Plex collection catalogs
               </FormLabel>
@@ -73,7 +73,7 @@ export const CollectionsField: FC<Props> = ({
                     type: collection.type,
                   };
                   return (
-                    <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                    <FormItem className="flex flex-row items-start gap-x-3 gap-y-0">
                       <FormControl>
                         <Checkbox
                           checked={field.value.some(

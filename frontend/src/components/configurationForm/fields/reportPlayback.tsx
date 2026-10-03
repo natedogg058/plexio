@@ -21,7 +21,7 @@ export const ReportPlaybackField: FC<Props> = ({ form }) => {
       name="reportPlayback"
       render={({ field }) => (
         <FormItem className="items-center justify-between flex flex-row rounded-lg border p-2">
-          <div className="space-y-0.5">
+          <div className="flex flex-col gap-0.5">
             <FormLabel className="text-base">Report playback to Plex</FormLabel>
             <FormDescription>
               Sync watch progress to Plex. When route-through-Plexio is off,

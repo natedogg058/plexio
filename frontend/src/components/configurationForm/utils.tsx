@@ -4,7 +4,7 @@ export const parseUrlToIpPort = (url: string): string => {
   const hostname = urlObj.hostname;
   const port = urlObj.port;
 
-  const ipMatch = hostname.match(/^(\d+-\d+-\d+-\d+)/);
+  const ipMatch = /^(\d+-\d+-\d+-\d+)/.exec(hostname);
   if (!ipMatch) {
     throw new Error('Invalid hostname format.');
   }

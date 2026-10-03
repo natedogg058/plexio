@@ -21,7 +21,7 @@ export const IncludeConnectionFallbacksField: FC<Props> = ({ form }) => {
       name="includeConnectionFallbacks"
       render={({ field }) => (
         <FormItem className="items-center justify-between flex flex-row rounded-lg border p-2">
-          <div className="space-y-0.5">
+          <div className="flex flex-col gap-0.5">
             <FormLabel className="text-base">
               Include alternate Plex connections
             </FormLabel>

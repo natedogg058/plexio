@@ -53,7 +53,7 @@ export const SectionsField: FC<Props> = ({
                   return (
                     <FormItem
                       key={item.key}
-                      className="flex flex-row items-start space-x-3 space-y-0"
+                      className="flex flex-row items-start gap-x-3 gap-y-0"
                     >
                       <FormControl>
                         <Checkbox

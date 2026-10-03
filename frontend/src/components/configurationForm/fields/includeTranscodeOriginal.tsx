@@ -21,7 +21,7 @@ export const IncludeTranscodeOriginalField: FC<Props> = ({ form }) => {
       name="includeTranscodeOriginal"
       render={({ field }) => (
         <FormItem className="items-center justify-between flex flex-row rounded-lg border p-2">
-          <div className="space-y-0.5">
+          <div className="flex flex-col gap-0.5">
             <FormLabel className="text-base">
               Include Transcoded Stream
             </FormLabel>

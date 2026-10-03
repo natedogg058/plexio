@@ -28,7 +28,7 @@ export const IncludeTranscodeDownFields: FC<Props> = ({ form }) => {
         name="includeTranscodeDown"
         render={({ field }) => (
           <FormItem className="items-center justify-between flex flex-row rounded-lg border p-2">
-            <div className="space-y-0.5">
+            <div className="flex flex-col gap-0.5">
               <FormLabel className="text-base">
                 Include Transcoded Streams with Lower Resolutions
               </FormLabel>
@@ -64,7 +64,7 @@ export const IncludeTranscodeDownFields: FC<Props> = ({ form }) => {
                     return (
                       <FormItem
                         key={item}
-                        className="flex flex-row items-start space-x-3 space-y-0"
+                        className="flex flex-row items-start gap-x-3 gap-y-0"
                       >
                         <FormControl>
                           <Checkbox
