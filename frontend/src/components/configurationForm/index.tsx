@@ -1,7 +1,7 @@
-import { FC, useEffect, useState } from 'react';
+import { FC, FormEvent, useEffect, useRef, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Base64 } from 'js-base64';
-import { SubmitHandler, useForm } from 'react-hook-form';
+import { useForm } from 'react-hook-form';
 import { v4 as uuidv4 } from 'uuid';
 import {
   DiscoveryUrlField,
@@ -24,8 +24,9 @@ import {
 import { Icons } from '@/components/icons';
 import { Button } from '@/components/ui/button.tsx';
 import { Form } from '@/components/ui/form';
-import usePMSSections from '@/hooks/usePMSSections.tsx';
 import usePMSCollections from '@/hooks/usePMSCollections.tsx';
+import usePMSSections from '@/hooks/usePMSSections.tsx';
+import { copyText } from '@/lib/clipboard';
 import { createSession, getPublicConfig } from '@/services/BackendService.tsx';
 import { PlexServer } from '@/types/plex.tsx';
 
@@ -42,6 +43,11 @@ const ConfigurationForm: FC<Props> = ({
 }) => {
   const [baseUrl, setBaseUrl] = useState<string | null>(null);
   const [legacyUrlsEnabled, setLegacyUrlsEnabled] = useState(false);
+  const submitting = useRef(false);
+  const [busy, setBusy] = useState(false);
+  const [manifestUrl, setManifestUrl] = useState('');
+  const [copyStatus, setCopyStatus] = useState('');
+  const [submitError, setSubmitError] = useState('');
 
   useEffect(() => {
     // Fetch once at mount. If the backend doesn't respond or BASE_URL isn't set,
@@ -68,6 +74,14 @@ const ConfigurationForm: FC<Props> = ({
     },
   });
 
+  useEffect(() => {
+    const subscription = form.watch(() => {
+      setManifestUrl('');
+      setCopyStatus('');
+    });
+    return () => subscription.unsubscribe();
+  }, [form]);
+
   const serverName = form.watch('serverName');
   const server = servers.find((candidate) => candidate.name === serverName);
 
@@ -88,20 +102,13 @@ const ConfigurationForm: FC<Props> = ({
     includeCollections,
   );
 
-  const onSubmit: SubmitHandler<ConfigurationFormType> = async (
-    configuration,
-    event,
-  ) => {
+  const createManifestUrl = async (
+    configuration: ConfigurationFormType,
+  ): Promise<string> => {
     if (!server) {
-      return;
+      throw new Error('Please select a Plex server.');
     }
 
-    // Read which button submitted before any await (the native event's
-    // submitter must be captured synchronously).
-    const nativeEvent = event?.nativeEvent;
-    const submitter =
-      nativeEvent instanceof SubmitEvent ? nativeEvent.submitter : null;
-    const action = submitter instanceof HTMLButtonElement ? submitter.name : '';
     const includeConnectionFallbacks =
       configuration.includeDirectPlay &&
       !(configuration.reportPlayback && configuration.proxyStreams) &&
@@ -128,7 +135,9 @@ const ConfigurationForm: FC<Props> = ({
       })(),
       streamingConnections: includeConnectionFallbacks
         ? server.connections
-            .filter((connection) => connection.uri !== configuration.streamingUrl)
+            .filter(
+              (connection) => connection.uri !== configuration.streamingUrl,
+            )
             .map((connection) => ({
               url: connection.uri,
               kind: connection.relay
@@ -175,20 +184,61 @@ const ConfigurationForm: FC<Props> = ({
       );
       addonUrl = `${origin}/${uuidv4()}/${encodedConfiguration}/manifest.json`;
     } else {
-      window.alert(
+      throw new Error(
         'Plexio could not create a secure install session. Please retry or check the server logs.',
       );
-      return;
     }
 
-    if (action === 'clipboard') {
-      try {
-        await navigator.clipboard.writeText(addonUrl);
-      } catch {
-        window.prompt('Copy your Plexio install URL:', addonUrl);
+    return addonUrl;
+  };
+
+  const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (submitting.current) return;
+    submitting.current = true;
+    setBusy(true);
+    setManifestUrl('');
+    setCopyStatus('');
+    setSubmitError('');
+
+    const submitter = (event.nativeEvent as SubmitEvent).submitter;
+    const copying =
+      submitter instanceof HTMLButtonElement && submitter.name === 'clipboard';
+    const validationError = new Error('Please check the highlighted fields.');
+    const url = new Promise<string>((resolve, reject) => {
+      void form
+        .handleSubmit(
+          (configuration) => {
+            void createManifestUrl(configuration).then(resolve, reject);
+          },
+          () => reject(validationError),
+        )(event)
+        .catch(reject);
+    });
+
+    // Reserve clipboard access synchronously, including before async validation.
+    const copied = copying ? copyText(url) : Promise.resolve(false);
+    try {
+      const addonUrl = await url;
+      if (copying) {
+        setManifestUrl(addonUrl);
+        setCopyStatus(
+          (await copied)
+            ? 'Manifest URL copied.'
+            : 'Your manifest URL is ready. Click Copy URL or select it to copy manually.',
+        );
+      } else {
+        window.location.href = addonUrl.replace(/https?:\/\//, 'stremio://');
       }
-    } else {
-      window.location.href = addonUrl.replace(/https?:\/\//, 'stremio://');
+    } catch (error) {
+      setSubmitError(
+        error instanceof Error
+          ? error.message
+          : 'Could not create a manifest URL.',
+      );
+    } finally {
+      submitting.current = false;
+      setBusy(false);
     }
   };
 
@@ -196,7 +246,7 @@ const ConfigurationForm: FC<Props> = ({
     <Form {...form}>
       <form
         onSubmit={(event) => {
-          void form.handleSubmit(onSubmit)(event);
+          void onSubmit(event);
         }}
         className="space-y-2 p-2 rounded-lg border"
       >
@@ -230,28 +280,64 @@ const ConfigurationForm: FC<Props> = ({
         <IncludeDirectPlayField form={form} />
         {form.watch('includeDirectPlay') &&
           !(form.watch('reportPlayback') && form.watch('proxyStreams')) && (
-          <IncludeConnectionFallbacksField form={form} />
-        )}
+            <IncludeConnectionFallbacksField form={form} />
+          )}
         <IncludeTranscodeOriginalField form={form} />
         <IncludeTranscodeDownFields form={form} />
         <IncludePlexTvField form={form} />
         <ReportPlaybackField form={form} />
-        {form.watch('reportPlayback') && (
-          <ProxyStreamsField form={form} />
-        )}
+        {form.watch('reportPlayback') && <ProxyStreamsField form={form} />}
 
         <div className="flex items-center space-x-1 justify-center p-3">
-          <Button className="h-11 w-10 p-2" type="submit" name="clipboard">
+          <Button
+            className="h-11 w-10 p-2"
+            type="submit"
+            name="clipboard"
+            aria-label="Copy manifest URL"
+            title="Copy manifest URL"
+            disabled={busy}
+          >
             <Icons.clipboard />
           </Button>
           <Button
             className="h-11 rounded-md px-8 text-xl"
             type="submit"
             name="install"
+            disabled={busy}
           >
             Install
           </Button>
         </div>
+        {busy && <p role="status">Preparing manifest URL…</p>}
+        {submitError && <p role="alert">{submitError}</p>}
+        {manifestUrl && (
+          <div className="space-y-2 p-2">
+            <label htmlFor="manifest-url">Manifest URL</label>
+            <input
+              id="manifest-url"
+              className="w-full rounded-md border bg-background p-2 text-sm"
+              readOnly
+              value={manifestUrl}
+              onFocus={(event) => event.currentTarget.select()}
+              onClick={(event) => event.currentTarget.select()}
+            />
+            <Button
+              type="button"
+              onClick={() => {
+                void copyText(manifestUrl).then((copied) => {
+                  setCopyStatus(
+                    copied
+                      ? 'Manifest URL copied.'
+                      : 'Select the manifest URL and copy it manually.',
+                  );
+                });
+              }}
+            >
+              Copy URL
+            </Button>
+            <p role="status">{copyStatus}</p>
+          </div>
+        )}
       </form>
     </Form>
   );
