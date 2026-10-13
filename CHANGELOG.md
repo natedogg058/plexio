@@ -15,6 +15,36 @@
   and ESLint 9, and retained the configure page's themes and responsive layout.
   The UI requires Safari 16.4+, Chrome 111+ or Firefox 128+.
 
+## Unreleased
+
+### Playback
+
+- Fixed playback reporting without byte proxying. “Route streams through
+  Plexio” off now keeps the timeline running instead of sending no updates
+  at all: Plexio redirects the player to a Direct Play URL that identifies
+  the session as this install and then heartbeats Plex on its own. Plex reaps
+  a session it never observes as playing, which is what ended a plain Direct
+  Play stream part-way through on servers that limit how long a session may
+  sit paused. No media crosses Plexio in this mode.
+- The keepalive reads Plex's own `playbackState` from each timeline reply and
+  stops after two consecutive non-progress answers, so it ends when the
+  session is actually gone. That works on servers that answer `/status/sessions`
+  with 403, which shared-server providers commonly do to avoid leaking other
+  users' sessions. A single blip during a seek is tolerated, and the runtime
+  cap still bounds the loop at the item duration plus a grace window so a
+  closed player cannot leave a phantom session on a shared server.
+- Fixed the keepalive redirect rejecting `HEAD` probes with 405, which made
+  players that verify a stream before playback report the source as
+  unavailable. Keepalive URLs now answer `HEAD` the same way the playback
+  proxy already did.
+- Fixed a playback hang when Plex accepts the connection but never sends
+  response headers, which players report as a timeout with no error. The
+  response headers are now waited on with the same 30-second bound as a
+  media chunk, after which Plexio returns HTTP 504 instead of holding the
+  request open. The bound covers only the handshake: aiohttp's `total` timer
+  would also kill a long streaming body, so the body keeps using the
+  chunk-scoped read timeout that leaves buffering players connected.
+
 ## v0.10.6
 
 - Fall back to direct Plex library GUID lookup when Plex's cloud IMDb matcher
