@@ -24,6 +24,8 @@ class Settings(BaseSettings):
         r'|.*plexio\.stream|.*strem\.io|.*stremio\.com'
     )
     plex_requests_timeout: int = Field(default=10, ge=1, le=120)
+    # Optional PEM bundle for verifying Plex HTTPS certificates.
+    plex_ca_bundle: str | None = None
     cache_type: CacheType = CacheType.memory
     redis_url: str = 'redis://redis:6379/0'
     plex_match_cache_ttl: int = Field(default=86_400, ge=0, le=2_592_000)
