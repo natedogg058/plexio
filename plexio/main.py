@@ -1,4 +1,5 @@
 import os
+import ssl
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -31,8 +32,16 @@ sentry_sdk.init(before_send=before_send)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # An optional custom CA bundle supports Plex servers whose certificate
+    # chain is not trusted by the container's default CA store.
+    ssl_context = (
+        ssl.create_default_context(cafile=settings.plex_ca_bundle)
+        if settings.plex_ca_bundle
+        else None
+    )
     plex_client = aiohttp.ClientSession(
         headers={'accept': 'application/json'},
+        connector=aiohttp.TCPConnector(ssl=ssl_context) if ssl_context else None,
     )
     cache = init_cache(settings)
     sessions = await init_sessions(settings)
