@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- Added a `PLEX_CA_BUNDLE` setting to trust an extra CA for Plex HTTPS
+  certificates on top of the system roots. Plexio fails at startup if the
+  bundle is missing or invalid.
+- The discovery URL picker now also lists the local connections Plex
+  advertises, marked with a **local** badge, for Plexio installs on the same
+  network as the Plex server.
+- Updated aiohttp to 3.14.4 and yarl to 1.25.1, and frontend dependencies
+  including zod 4, @hookform/resolvers 5, vite, typescript-eslint,
+  follow-redirects, minimatch and source-map-js.
+
 ## v0.10.7
 
 - Fixed manifest copying in Safari and Chrome by reserving clipboard access
