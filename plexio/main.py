@@ -30,15 +30,23 @@ def before_send(event, hint):
 sentry_sdk.init(before_send=before_send)
 
 
+def build_plex_ssl_context(ca_bundle: str | None) -> ssl.SSLContext | None:
+    """Trust an extra CA bundle for Plex HTTPS on top of the system roots.
+
+    The same HTTP client also talks to plex.tv, so the custom bundle is added
+    to the default trust store rather than replacing it. A missing or invalid
+    bundle raises, so Plexio fails at startup instead of silently ignoring it.
+    """
+    if not ca_bundle:
+        return None
+    context = ssl.create_default_context()
+    context.load_verify_locations(cafile=ca_bundle)
+    return context
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # An optional custom CA bundle supports Plex servers whose certificate
-    # chain is not trusted by the container's default CA store.
-    ssl_context = (
-        ssl.create_default_context(cafile=settings.plex_ca_bundle)
-        if settings.plex_ca_bundle
-        else None
-    )
+    ssl_context = build_plex_ssl_context(settings.plex_ca_bundle)
     plex_client = aiohttp.ClientSession(
         headers={'accept': 'application/json'},
         connector=aiohttp.TCPConnector(ssl=ssl_context) if ssl_context else None,

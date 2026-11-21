@@ -57,6 +57,7 @@ orchestrator. Common settings are:
 | `MAX_REQUEST_BODY_SIZE` | `65536` | Maximum POST/PUT/PATCH body size in bytes. |
 | `PUBLIC_API_RATE_LIMIT` | `60` | Per-client connection-test/session requests per minute. |
 | `PLEX_REQUESTS_TIMEOUT` | `10` | Plex request timeout in seconds. |
+| `PLEX_CA_BUNDLE` | unset | Path to an extra PEM CA bundle trusted for Plex HTTPS, in addition to the system roots. See [the custom CA guide](docs/custom-plex-ca-bundle.md). |
 | `PLEX_MATCHING_TOKEN` | unset | Token from an owned server for metadata matching on shared servers. |
 | `CACHE_TYPE` | `memory` | `memory` or `redis`. |
 | `REDIS_URL` | `redis://redis:6379/0` | Redis connection URL. |
