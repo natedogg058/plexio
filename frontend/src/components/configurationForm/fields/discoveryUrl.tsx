@@ -101,19 +101,23 @@ export const DiscoveryUrlField: FC<Props> = ({
                   <SelectValue placeholder="Select a discovery url" />
                 </SelectTrigger>
               </FormControl>
-              {server.connections
-                .length > 0 && (
+              {server.connections.length > 0 && (
                 <SelectContent>
                   {server.connections.map((connection) => (
-                      <SelectItem key={connection.uri} value={connection.uri}>
-                        {connection.relay && (
-                          <Badge className="mr-1.5" variant="secondary">
-                            relay
-                          </Badge>
-                        )}
-                        {`${connection.address}:${connection.port}`}
-                      </SelectItem>
-                    ))}
+                    <SelectItem key={connection.uri} value={connection.uri}>
+                      {connection.relay && (
+                        <Badge className="mr-1.5" variant="secondary">
+                          relay
+                        </Badge>
+                      )}
+                      {connection.local && (
+                        <Badge className="mr-1.5" variant="secondary">
+                          local
+                        </Badge>
+                      )}
+                      {`${connection.address}:${connection.port}`}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               )}
             </Select>
@@ -133,7 +137,8 @@ export const DiscoveryUrlField: FC<Props> = ({
             </Button>
           </div>
           <FormDescription>
-            Select a Plex server URL reachable from the Plexio backend. Local connections are supported when Plexio runs on the same network.
+            Select a Plex server URL reachable from the Plexio backend. Local
+            connections are supported when Plexio runs on the same network.
           </FormDescription>
           <FormMessage />
         </FormItem>
