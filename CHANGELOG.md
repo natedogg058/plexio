@@ -8,7 +8,8 @@
 - The discovery URL picker now also lists the local connections Plex
   advertises, marked with a **local** badge, for Plexio installs on the same
   network as the Plex server.
-- Updated aiohttp to 3.14.4 and yarl to 1.25.1, and frontend dependencies
+- Updated aiohttp to 3.14.4, yarl to 1.25.1, certifi to 2026.11.20 and
+  multidict to 6.9.1 (security advisories), and frontend dependencies
   including zod 4, @hookform/resolvers 5, vite, typescript-eslint,
   follow-redirects, minimatch and source-map-js.
 
