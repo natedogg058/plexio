@@ -700,6 +700,7 @@ async def get_play(
     methods=['GET', 'HEAD'],
 )
 async def get_keepalive(
+    request: Request,
     http: Annotated[ClientSession, Depends(get_http_client)],
     configuration: Annotated[AddonConfiguration, Depends(get_addon_configuration)],
     rating_key: str,
@@ -717,4 +718,5 @@ async def get_keepalive(
         duration_ms=duration,
         part_key=b64decode_path(part_b64),
         identifier=session_id or installation_id or 'plexio',
+        method=request.method,
     )

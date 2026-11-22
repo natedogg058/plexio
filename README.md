@@ -109,7 +109,10 @@ identifies the session as this install, then sends only the timeline
 heartbeats. No media crosses Plexio, so this works from a host far away from
 the server. Plex reaps any session it never observes as playing, which is what
 otherwise drops a plain Direct Play stream part-way through on servers that
-limit how long a session may sit paused.
+limit how long a session may sit paused. Players still open the stream through
+Plexio's `/keepalive/` URL before being redirected, so the public URL must be
+reachable by every Stremio device in this mode too. Turn playback reporting off
+if you want Stremio to receive plain Direct Play URLs instead.
 
 ## Playback controls
 

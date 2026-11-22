@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+### General
+
 - Added a `PLEX_CA_BUNDLE` setting to trust an extra CA for Plex HTTPS
   certificates on top of the system roots. Plexio fails at startup if the
   bundle is missing or invalid.
@@ -12,23 +14,6 @@
   multidict to 6.9.1 (security advisories), and frontend dependencies
   including zod 4, @hookform/resolvers 5, vite, typescript-eslint,
   follow-redirects, minimatch and source-map-js.
-
-## v0.10.7
-
-- Fixed manifest copying in Safari and Chrome by reserving clipboard access
-  during the original click. Added success feedback, a selectable manifest URL,
-  direct-click retry and a fallback for self-hosted HTTP pages.
-- Discard pending install/copy results when configuration changes, so a delayed
-  response cannot silently install or copy the previous settings.
-- Fixed connection-test feedback for ordinary IPv4 addresses, IPv6 literals and
-  custom domains, preserving readable Plex TLS addresses and surfacing errors.
-- Added Chromium and WebKit regression tests to CI for connection checks,
-  delayed copying, settings changes, clipboard fallbacks and failure recovery.
-- Updated vulnerable runtime and frontend dependencies, migrated to Tailwind 4
-  and ESLint 9, and retained the configure page's themes and responsive layout.
-  The UI requires Safari 16.4+, Chrome 111+ or Firefox 128+.
-
-## Unreleased
 
 ### Playback
 
@@ -57,6 +42,31 @@
   request open. The bound covers only the handshake: aiohttp's `total` timer
   would also kill a long streaming body, so the body keeps using the
   chunk-scoped read timeout that leaves buffering players connected.
+- **Compatibility:** with “Report playback to Plex” on and “Route streams
+  through Plexio” off, stream URLs now point at Plexio's `/keepalive/` route,
+  which redirects to Plex. Every Stremio device must therefore be able to reach
+  Plexio's public URL to start playback, as it already had to with routing on.
+  Turn playback reporting off to keep handing out plain Direct Play URLs.
+- Keepalives are bounded because their URLs are public: `HEAD` probes only
+  redirect, repeat requests for the same item reuse the running keepalive, the
+  duration taken from the URL is capped at eight hours, at most 256 run at
+  once, a keepalive stops after six consecutive failed timeline updates, and
+  running keepalives are cancelled on shutdown.
+
+## v0.10.7
+
+- Fixed manifest copying in Safari and Chrome by reserving clipboard access
+  during the original click. Added success feedback, a selectable manifest URL,
+  direct-click retry and a fallback for self-hosted HTTP pages.
+- Discard pending install/copy results when configuration changes, so a delayed
+  response cannot silently install or copy the previous settings.
+- Fixed connection-test feedback for ordinary IPv4 addresses, IPv6 literals and
+  custom domains, preserving readable Plex TLS addresses and surfacing errors.
+- Added Chromium and WebKit regression tests to CI for connection checks,
+  delayed copying, settings changes, clipboard fallbacks and failure recovery.
+- Updated vulnerable runtime and frontend dependencies, migrated to Tailwind 4
+  and ESLint 9, and retained the configure page's themes and responsive layout.
+  The UI requires Safari 16.4+, Chrome 111+ or Firefox 128+.
 
 ## v0.10.6
 

@@ -28,9 +28,19 @@ PING_INTERVAL = 10.0  # seconds between Plex timeline updates
 UPSTREAM_READ_TIMEOUT = 30.0  # seconds waiting for a requested media chunk
 TIMELINE_TIMEOUT = 10.0  # seconds for one timeline update against a remote server
 KEEPALIVE_GRACE = 600.0  # extra seconds past the runtime before giving up
+# Keepalive URLs are public, so their duration cannot be trusted to bound the
+# loop. Eight hours covers any single film or episode.
+MAX_KEEPALIVE_DURATION_MS = 8 * 60 * 60 * 1000
+MAX_FAILED_UPDATES = 6  # consecutive failed timeline requests before giving up
+MAX_KEEPALIVES = 256  # concurrent keepalive loops across all installs
 
-# Background keepalives need a strong reference or the event loop may drop them.
-_KEEPALIVE_TASKS: set[asyncio.Task] = set()
+# Returned by _timeline when the request itself failed, as opposed to None for
+# a reply whose playbackState could not be read.
+TIMELINE_FAILED = 'plexio:timeline-failed'
+
+# Running keepalives keyed by (identifier, rating_key). Holding the task here
+# also gives it the strong reference the event loop needs to keep it alive.
+_KEEPALIVE_TASKS: dict[tuple[str, str], asyncio.Task] = {}
 
 logger = logging.getLogger(__name__)
 
@@ -79,8 +89,9 @@ async def _timeline(
 ) -> str | None:
     """Send one timeline update and return the playbackState Plex reported.
 
-    Returns None when the update could not be read at all, which callers must
-    treat as "unknown" rather than "finished".
+    Returns TIMELINE_FAILED when the request failed or Plex answered with an
+    error, and None when Plex answered but the state could not be read. Callers
+    must treat None as "unknown" rather than "finished".
     """
     timeline_url = (url / ':/timeline').with_query(
         {
@@ -104,12 +115,12 @@ async def _timeline(
                     'Plex timeline update failed with HTTP %s',
                     response.status,
                 )
-                return None
+                return TIMELINE_FAILED
         return _playback_state(body)
     except Exception:
         # Timeline reporting is optional and must never interrupt playback.
         logger.warning('Unable to send Plex timeline update', exc_info=True)
-        return None
+        return TIMELINE_FAILED
 
 
 async def _playback_heartbeat(
@@ -378,12 +389,13 @@ async def _keepalive_loop(
     """Hold a Plex session open as playing without touching media bytes.
 
     The player was redirected straight to Plex, so this only sends timeline
-    updates. It ends once Plex stops reporting the session as in progress, or
+    updates. It ends once Plex stops reporting the session as in progress,
+    once Plex has been unreachable for MAX_FAILED_UPDATES updates in a row, or
     when the runtime is well past the item duration so a closed player cannot
     leave a phantom session behind on a shared server.
 
-    Two consecutive unreadable progress states are required before giving up,
-    so a single blip during a seek does not abandon a live session.
+    Two consecutive non-progress states are required before giving up, so a
+    single blip during a seek does not abandon a live session.
     """
     started_at = monotonic()
     deadline = started_at + max(duration_ms, 0) / 1000 + KEEPALIVE_GRACE
@@ -399,6 +411,7 @@ async def _keepalive_loop(
 
     now = started_at
     untracked = 0
+    failed = 0
     while True:
         playback_state = await _timeline(
             client,
@@ -410,10 +423,16 @@ async def _keepalive_loop(
             duration_ms=duration_ms,
             identifier=identifier,
         )
-        untracked = 0 if playback_state in (None, 'progress') else untracked + 1
+        if playback_state == TIMELINE_FAILED:
+            failed += 1
+        else:
+            failed = 0
+            untracked = 0 if playback_state in (None, 'progress') else untracked + 1
+        if untracked >= 2 or failed >= MAX_FAILED_UPDATES:
+            break
         await asyncio.sleep(PING_INTERVAL)
         now = monotonic()
-        if now >= deadline or untracked >= 2:
+        if now >= deadline:
             break
 
     await _timeline(
@@ -436,17 +455,42 @@ def start_keepalive(
     duration_ms,
     part_key,
     identifier,
+    method='GET',
 ):
     """Redirect the player to Plex and keep its session marked as playing.
 
     No media crosses Plexio. Only the background timeline task does work, so
     this is the mode for a self-hosted Plexio sitting away from the server.
+
+    Keepalive URLs are unauthenticated beyond the install, so every request is
+    bounded: HEAD probes only redirect, a repeat request for an item that is
+    already being kept alive reuses the running loop (players re-open the URL
+    on seek or reconnect), the duration is clamped, and the total number of
+    loops is capped.
     """
-    target = direct_play_url(
-        configuration=configuration,
-        part_key=part_key,
-        identifier=identifier,
+    target = RedirectResponse(
+        direct_play_url(
+            configuration=configuration,
+            part_key=part_key,
+            identifier=identifier,
+        ),
+        status_code=302,
     )
+    if method.upper() == 'HEAD':
+        return target
+
+    key = (identifier, str(rating_key))
+    running = _KEEPALIVE_TASKS.get(key)
+    if running is not None and not running.done():
+        return target
+    if len(_KEEPALIVE_TASKS) >= MAX_KEEPALIVES:
+        logger.warning(
+            'Not starting Plex keepalive: %d already running',
+            len(_KEEPALIVE_TASKS),
+        )
+        return target
+
+    duration_ms = min(max(duration_ms, 0), MAX_KEEPALIVE_DURATION_MS)
     task = asyncio.create_task(
         _keepalive_loop(
             client,
@@ -458,7 +502,21 @@ def start_keepalive(
         ),
         name='plexio-playback-keepalive',
     )
-    _KEEPALIVE_TASKS.add(task)
-    task.add_done_callback(_KEEPALIVE_TASKS.discard)
+    _KEEPALIVE_TASKS[key] = task
+
+    def _forget(done, key=key):
+        if _KEEPALIVE_TASKS.get(key) is done:
+            del _KEEPALIVE_TASKS[key]
+
+    task.add_done_callback(_forget)
     logger.info('Started Plex keepalive for a %d ms item', duration_ms)
-    return RedirectResponse(target, status_code=302)
+    return target
+
+
+async def stop_keepalives():
+    """Cancel running keepalives, e.g. before the shared HTTP client closes."""
+    tasks = list(_KEEPALIVE_TASKS.values())
+    for task in tasks:
+        task.cancel()
+    await asyncio.gather(*tasks, return_exceptions=True)
+    _KEEPALIVE_TASKS.clear()

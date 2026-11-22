@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from plexio.cache import init_cache
+from plexio.plex.playback import stop_keepalives
 from plexio.routers.addon import router as addon_router
 from plexio.routers.configuration import router as configuration_router
 from plexio.routers.plex_proxy import router as plex_proxy_router
@@ -60,6 +61,8 @@ async def lifespan(app: FastAPI):
         'sessions': sessions,
     }
 
+    # Keepalive loops share plex_client, so stop them before it closes.
+    await stop_keepalives()
     await plex_client.close()
     await cache.close()
     if sessions is not None:
