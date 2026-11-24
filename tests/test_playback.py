@@ -1,11 +1,34 @@
 import asyncio
+import json
 from types import SimpleNamespace
 from unittest import IsolatedAsyncioTestCase, TestCase
 from unittest.mock import patch
 
+from fastapi import HTTPException, status
 from yarl import URL
 
-from plexio.plex.playback import _position_ms, _timeline, proxy_playback
+from plexio.plex.playback import (
+    _KEEPALIVE_TASKS,
+    MAX_KEEPALIVE_DURATION_MS,
+    TIMELINE_FAILED,
+    _keepalive_loop,
+    _position_ms,
+    _timeline,
+    direct_play_url,
+    proxy_playback,
+    start_keepalive,
+    stop_keepalives,
+)
+
+
+class NeverResponse:
+    """Awaited forever, like a server that never sends response headers."""
+
+    def __await__(self):
+        async def hang():
+            await asyncio.Event().wait()
+
+        return hang().__await__()
 
 
 class FakeContent:
@@ -51,7 +74,7 @@ class FakeResponse:
 
     async def read(self):
         self.read_called = True
-        return b''
+        return b'{"MediaContainer": {"playbackState": "progress"}}'
 
     def close(self):
         self.closed = True
@@ -74,6 +97,53 @@ class FakeClient:
     def head(self, url, **kwargs):
         self.calls.append(('HEAD', url, kwargs))
         return self.stream_response
+
+
+class KeepaliveResponse(FakeResponse):
+    """Timeline response carrying the playbackState Plex reports back."""
+
+    def __init__(self, *, playback_state='progress', status=200):
+        super().__init__(status=status)
+        self.playback_state = playback_state
+
+    async def read(self):
+        self.read_called = True
+        if self.playback_state is None:
+            return b'not json'
+        return json.dumps(
+            {'MediaContainer': {'playbackState': self.playback_state}}
+        ).encode()
+
+
+class KeepaliveClient:
+    """Client that answers timeline calls from a scripted playbackState list.
+
+    The last scripted state repeats once the script runs out, so a test that
+    forgets to end the loop still terminates on the runtime cap.
+    """
+
+    def __init__(self, playback_states=('progress',), *, status=200):
+        self.script = list(playback_states)
+        self.last = self.script[-1]
+        self.status = status
+        self.calls = []
+
+    def get(self, url, **kwargs):
+        self.calls.append(('GET', url, kwargs))
+        if self.status >= 400:
+            return KeepaliveResponse(status=self.status)
+        if len(self.script) > 1:
+            state = self.script.pop(0)
+        else:
+            state = self.last
+        return KeepaliveResponse(playback_state=state)
+
+    def timeline_states(self):
+        return [
+            url.query['state']
+            for _, url, _ in self.calls
+            if '/:/timeline' in str(url)
+        ]
 
 
 class PlaybackPositionTests(TestCase):
@@ -152,7 +222,7 @@ class PlaybackProxyTests(IsolatedAsyncioTestCase):
             identifier='session-id',
         )
 
-        self.assertTrue(sent)
+        self.assertEqual(sent, 'progress')
         _, url, kwargs = client.calls[0]
         self.assertEqual(url.path, '/:/timeline')
         self.assertEqual(url.query['ratingKey'], '42')
@@ -340,3 +410,284 @@ class PlaybackProxyTests(IsolatedAsyncioTestCase):
         self.assertEqual(response.headers['content-range'], 'bytes 0-999/1000')
         self.assertTrue(upstream.closed)
         self.assertEqual([method for method, _, _ in client.calls], ['HEAD'])
+
+    async def test_stalled_handshake_returns_504_instead_of_hanging(self):
+        """Plex accepted the TCP connection but never sent response headers.
+
+        Without a bound on the handshake phase the player waits forever: the
+        per-chunk read timeout only covers a response that already started,
+        and aiohttp's own `total` timer cannot be armed because it would also
+        kill a long streaming body.
+        """
+        configuration = SimpleNamespace(
+            streaming_url=URL('https://plex.example.test'),
+            discovery_url=URL('https://plex.example.test'),
+            access_token='secret',
+        )
+        request = SimpleNamespace(method='GET', headers={})
+
+        class StalledHandshakeClient:
+            """Answers connect, never sends response headers."""
+
+            def get(self, url, **kwargs):
+                return NeverResponse()
+
+            def head(self, url, **kwargs):
+                raise AssertionError('unexpected HEAD')
+
+        with patch('plexio.plex.playback.UPSTREAM_READ_TIMEOUT', 0.01):
+            with self.assertRaises(HTTPException) as raised:
+                await proxy_playback(
+                    request,
+                    client=StalledHandshakeClient(),
+                    configuration=configuration,
+                    rating_key='42',
+                    duration_ms=60_000,
+                    part_key='/library/parts/1/file.mkv',
+                    identifier='session-id',
+                )
+
+        self.assertEqual(
+            raised.exception.status_code, status.HTTP_504_GATEWAY_TIMEOUT
+        )
+
+
+class PlaybackKeepaliveTests(IsolatedAsyncioTestCase):
+    async def asyncTearDown(self):
+        await stop_keepalives()
+
+    def _configuration(self):
+        return SimpleNamespace(
+            streaming_url=URL('http://192.168.50.194:32400'),
+            discovery_url=URL('https://plex.example.test'),
+            access_token='secret',
+        )
+
+    def _run_loop(self, client, duration_ms):
+        return _keepalive_loop(
+            client,
+            url=URL('https://plex.example.test'),
+            token='secret',
+            rating_key='42',
+            duration_ms=duration_ms,
+            identifier='session-id',
+        )
+
+    def test_direct_play_url_carries_this_install_as_the_client(self):
+        parsed = URL(
+            direct_play_url(
+                configuration=self._configuration(),
+                part_key='/library/parts/1/file.mkv',
+                identifier='session-id',
+            )
+        )
+
+        self.assertEqual(parsed.path, '/library/parts/1/file.mkv')
+        self.assertEqual(parsed.query['X-Plex-Token'], 'secret')
+        self.assertEqual(
+            parsed.query['X-Plex-Client-Identifier'],
+            'plexio-session-id',
+        )
+        self.assertEqual(parsed.query['X-Plex-Product'], 'Plexio')
+
+    async def test_keepalive_redirects_player_to_plex_without_proxying_media(self):
+        client = KeepaliveClient()
+        with (
+            patch('plexio.plex.playback.PING_INTERVAL', 0.01),
+            patch('plexio.plex.playback.KEEPALIVE_GRACE', 0),
+        ):
+            response = start_keepalive(
+                client=client,
+                configuration=self._configuration(),
+                rating_key='42',
+                duration_ms=0,
+                part_key='/library/parts/1/file.mkv',
+                identifier='session-id',
+            )
+            await asyncio.sleep(0.05)
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(
+            URL(response.headers['location']).query['X-Plex-Client-Identifier'],
+            'plexio-session-id',
+        )
+        self.assertEqual(
+            [url for _, url, _ in client.calls if '/library/parts/' in str(url)],
+            [],
+        )
+        self.assertEqual(client.timeline_states(), ['playing', 'stopped'])
+
+    @patch('plexio.plex.playback.PING_INTERVAL', 0.01)
+    async def test_keepalive_reports_playing_until_plex_drops_the_session(self):
+        client = KeepaliveClient(['progress', 'progress', 'ignore', 'ignore'])
+
+        await self._run_loop(client, 60_000)
+
+        self.assertEqual(
+            client.timeline_states(),
+            ['playing', 'playing', 'playing', 'playing', 'stopped'],
+        )
+
+    @patch('plexio.plex.playback.PING_INTERVAL', 0.01)
+    @patch('plexio.plex.playback.KEEPALIVE_GRACE', 0)
+    async def test_keepalive_tolerates_a_single_blip_mid_seek(self):
+        client = KeepaliveClient(['ignore', 'progress', 'progress', 'progress'])
+
+        await self._run_loop(client, 40)
+
+        states = client.timeline_states()
+        self.assertGreaterEqual(states.count('playing'), 3)
+        self.assertEqual(states[-1], 'stopped')
+
+    @patch('plexio.plex.playback.PING_INTERVAL', 0.01)
+    @patch('plexio.plex.playback.KEEPALIVE_GRACE', 0)
+    async def test_keepalive_keeps_reporting_when_timeline_is_unreadable(self):
+        client = KeepaliveClient(status=503)
+
+        await self._run_loop(client, 50)
+
+        states = client.timeline_states()
+        self.assertGreaterEqual(states.count('playing'), 2)
+        self.assertEqual(states[-1], 'stopped')
+
+    @patch('plexio.plex.playback.PING_INTERVAL', 0.01)
+    @patch('plexio.plex.playback.KEEPALIVE_GRACE', 0)
+    async def test_keepalive_stops_at_the_runtime_cap(self):
+        client = KeepaliveClient(['progress'])
+
+        await self._run_loop(client, 30)
+
+        states = client.timeline_states()
+        self.assertGreaterEqual(states.count('playing'), 2)
+        self.assertEqual(states[-1], 'stopped')
+
+    def _start(self, client, *, rating_key='42', duration_ms=60_000, method='GET'):
+        return start_keepalive(
+            client=client,
+            configuration=self._configuration(),
+            rating_key=rating_key,
+            duration_ms=duration_ms,
+            part_key='/library/parts/1/file.mkv',
+            identifier='session-id',
+            method=method,
+        )
+
+    async def test_timeline_reports_failure_distinctly_from_unknown_state(self):
+        kwargs = {
+            'url': URL('https://plex.example.test'),
+            'token': 'secret',
+            'rating_key': '42',
+            'state': 'playing',
+            'time_ms': 0,
+            'duration_ms': 60_000,
+            'identifier': 'session-id',
+        }
+        failed = await _timeline(KeepaliveClient(status=503), **kwargs)
+        unknown = await _timeline(KeepaliveClient([None]), **kwargs)
+
+        self.assertEqual(failed, TIMELINE_FAILED)
+        self.assertIsNone(unknown)
+
+    async def test_head_probe_redirects_without_starting_a_keepalive(self):
+        client = KeepaliveClient()
+
+        response = self._start(client, method='HEAD')
+        await asyncio.sleep(0)
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(_KEEPALIVE_TASKS, {})
+        self.assertEqual(client.calls, [])
+
+    @patch('plexio.plex.playback.PING_INTERVAL', 60)
+    async def test_repeat_requests_reuse_the_running_keepalive(self):
+        client = KeepaliveClient()
+
+        first = self._start(client)
+        task = _KEEPALIVE_TASKS[('session-id', '42')]
+        second = self._start(client)
+        await asyncio.sleep(0)
+
+        self.assertEqual(second.status_code, 302)
+        self.assertEqual(
+            first.headers['location'],
+            second.headers['location'],
+        )
+        self.assertEqual(list(_KEEPALIVE_TASKS.values()), [task])
+        self.assertEqual(client.timeline_states(), ['playing'])
+
+    @patch('plexio.plex.playback.PING_INTERVAL', 60)
+    async def test_finished_keepalive_is_forgotten_and_can_restart(self):
+        client = KeepaliveClient()
+        self._start(client)
+        task = _KEEPALIVE_TASKS[('session-id', '42')]
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+        self.assertEqual(_KEEPALIVE_TASKS, {})
+        self._start(client)
+        self.assertIsNot(_KEEPALIVE_TASKS[('session-id', '42')], task)
+
+    async def test_duration_from_url_is_clamped(self):
+        calls = []
+
+        async def fake_loop(client, **kwargs):
+            calls.append(kwargs['duration_ms'])
+
+        with patch('plexio.plex.playback._keepalive_loop', fake_loop):
+            self._start(KeepaliveClient(), rating_key='1', duration_ms=10**15)
+            self._start(KeepaliveClient(), rating_key='2', duration_ms=-5)
+            await asyncio.sleep(0)
+
+        self.assertEqual(calls, [MAX_KEEPALIVE_DURATION_MS, 0])
+
+    @patch('plexio.plex.playback.PING_INTERVAL', 60)
+    @patch('plexio.plex.playback.MAX_KEEPALIVES', 1)
+    async def test_concurrent_keepalives_are_capped(self):
+        client = KeepaliveClient()
+
+        self._start(client, rating_key='1')
+        response = self._start(client, rating_key='2')
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(list(_KEEPALIVE_TASKS), [('session-id', '1')])
+
+    @patch('plexio.plex.playback.PING_INTERVAL', 0.01)
+    @patch('plexio.plex.playback.MAX_FAILED_UPDATES', 3)
+    async def test_keepalive_gives_up_when_plex_stays_unreachable(self):
+        client = KeepaliveClient(status=503)
+
+        await asyncio.wait_for(self._run_loop(client, MAX_KEEPALIVE_DURATION_MS), 5)
+
+        self.assertEqual(
+            client.timeline_states(),
+            ['playing', 'playing', 'playing', 'stopped'],
+        )
+
+    @patch('plexio.plex.playback.PING_INTERVAL', 0.01)
+    @patch('plexio.plex.playback.MAX_FAILED_UPDATES', 3)
+    async def test_successful_update_resets_the_failure_count(self):
+        client = KeepaliveClient()
+        responses = iter([503, 503, 200, 503, 503, 200, 503, 503, 503])
+
+        def get(url, **kwargs):
+            client.calls.append(('GET', url, kwargs))
+            status_code = next(responses, 503)
+            if status_code >= 400:
+                return KeepaliveResponse(status=status_code)
+            return KeepaliveResponse(playback_state='progress')
+
+        client.get = get
+        await asyncio.wait_for(self._run_loop(client, MAX_KEEPALIVE_DURATION_MS), 5)
+
+        self.assertEqual(client.timeline_states().count('playing'), 9)
+
+    @patch('plexio.plex.playback.PING_INTERVAL', 60)
+    async def test_stop_keepalives_cancels_without_reporting_stopped(self):
+        client = KeepaliveClient()
+        self._start(client)
+        await asyncio.sleep(0)
+
+        await stop_keepalives()
+
+        self.assertEqual(_KEEPALIVE_TASKS, {})
+        self.assertEqual(client.timeline_states(), ['playing'])

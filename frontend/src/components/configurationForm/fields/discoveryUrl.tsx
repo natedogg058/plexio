@@ -101,21 +101,23 @@ export const DiscoveryUrlField: FC<Props> = ({
                   <SelectValue placeholder="Select a discovery url" />
                 </SelectTrigger>
               </FormControl>
-              {server.connections.filter((connection) => !connection.local)
-                .length > 0 && (
+              {server.connections.length > 0 && (
                 <SelectContent>
-                  {server.connections
-                    .filter((connection) => !connection.local)
-                    .map((connection) => (
-                      <SelectItem key={connection.uri} value={connection.uri}>
-                        {connection.relay && (
-                          <Badge className="mr-1.5" variant="secondary">
-                            relay
-                          </Badge>
-                        )}
-                        {`${connection.address}:${connection.port}`}
-                      </SelectItem>
-                    ))}
+                  {server.connections.map((connection) => (
+                    <SelectItem key={connection.uri} value={connection.uri}>
+                      {connection.relay && (
+                        <Badge className="mr-1.5" variant="secondary">
+                          relay
+                        </Badge>
+                      )}
+                      {connection.local && (
+                        <Badge className="mr-1.5" variant="secondary">
+                          local
+                        </Badge>
+                      )}
+                      {`${connection.address}:${connection.port}`}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               )}
             </Select>
@@ -135,7 +137,8 @@ export const DiscoveryUrlField: FC<Props> = ({
             </Button>
           </div>
           <FormDescription>
-            Select the public URL of your Plex server.
+            Select a Plex server URL reachable from the Plexio backend. Local
+            connections are supported when Plexio runs on the same network.
           </FormDescription>
           <FormMessage />
         </FormItem>

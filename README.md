@@ -57,6 +57,7 @@ orchestrator. Common settings are:
 | `MAX_REQUEST_BODY_SIZE` | `65536` | Maximum POST/PUT/PATCH body size in bytes. |
 | `PUBLIC_API_RATE_LIMIT` | `60` | Per-client connection-test/session requests per minute. |
 | `PLEX_REQUESTS_TIMEOUT` | `10` | Plex request timeout in seconds. |
+| `PLEX_CA_BUNDLE` | unset | Path to an extra PEM CA bundle trusted for Plex HTTPS, in addition to the system roots. See [the custom CA guide](docs/custom-plex-ca-bundle.md). |
 | `PLEX_MATCHING_TOKEN` | unset | Token from an owned server for metadata matching on shared servers. |
 | `CACHE_TYPE` | `memory` | `memory` or `redis`. |
 | `REDIS_URL` | `redis://redis:6379/0` | Redis connection URL. |
@@ -89,14 +90,29 @@ Set `BASE_URL=https://plexio.example.com` and proxy to container port `80`.
 Detailed Nginx, Caddy, Cloudflare Tunnel, Tailscale, and troubleshooting examples
 are in [the reverse-proxy guide](docs/reverse-proxy.md).
 
-If you enable “Report playback to Plex”, Direct Play streams pass through
-Plexio. The public URL must then be reachable by every Stremio device and your
+If you enable “Report playback to Plex” and “Route streams through Plexio”,
+Direct Play streams pass through Plexio.
+The public URL must then be reachable by every Stremio device and your
 proxy must permit byte-range requests and long-running responses. Plexio sends
 timeline heartbeats independently of media reads, so buffered external players
 remain active in Plex even while they temporarily stop requesting bytes. When a
 player is actively waiting for data, Plexio ends an upstream response that
 delivers no media for 30 seconds so the player can reconnect instead of hanging
-indefinitely on a stalled shared server.
+indefinitely on a stalled shared server. If Plex accepts the connection but
+never starts the response at all, Plexio returns HTTP 504 after the same
+30 seconds rather than holding the request open, so playback fails with an
+error instead of a timeout.
+
+With “Route streams through Plexio” turned off, playback reporting uses a
+keepalive instead: Plexio redirects the player to a Direct Play URL that
+identifies the session as this install, then sends only the timeline
+heartbeats. No media crosses Plexio, so this works from a host far away from
+the server. Plex reaps any session it never observes as playing, which is what
+otherwise drops a plain Direct Play stream part-way through on servers that
+limit how long a session may sit paused. Players still open the stream through
+Plexio's `/keepalive/` URL before being redirected, so the public URL must be
+reachable by every Stremio device in this mode too. Turn playback reporting off
+if you want Stremio to receive plain Direct Play URLs instead.
 
 ## Playback controls
 
@@ -105,10 +121,11 @@ rejects original-file playback and offer only Plex transcodes instead. Enable
 “Include alternate Plex connections” to expose the selected server's other
 local, remote, and Relay URLs as labelled Direct Play choices.
 
-When playback reporting is also enabled, Plexio presents one Direct Play choice
-and fetches it through the selected Streaming URL. It deliberately does not try
-other Plex-discovered connections, because addresses reachable from a playback
-device may be unreachable from Plexio's container or host.
+When both playback reporting and “Route streams through Plexio” are enabled,
+Plexio presents one Direct Play choice and fetches it through the selected
+Streaming URL. It deliberately does not try other Plex-discovered connections,
+because addresses reachable from a playback device may be unreachable from
+Plexio's container or host.
 
 Alternate connections remain Direct Play and never convert a failed request into
 a Plex transcode. If original-file playback returns HTTP 503 but Plex transcoding

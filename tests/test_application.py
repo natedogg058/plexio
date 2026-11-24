@@ -34,3 +34,13 @@ class ApplicationTests(TestCase):
         ]
         self.assertEqual(len(play_routes), 1)
         self.assertTrue({'GET', 'HEAD'}.issubset(play_routes[0].methods))
+
+    def test_keepalive_routes_accept_get_and_head(self):
+        keepalive_routes = [
+            route
+            for route in self._routes()
+            if route.path
+            == '/{session_id}/keepalive/{rating_key}/{duration}/{part_b64}'
+        ]
+        self.assertEqual(len(keepalive_routes), 1)
+        self.assertTrue({'GET', 'HEAD'}.issubset(keepalive_routes[0].methods))
